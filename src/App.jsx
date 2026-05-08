@@ -55,7 +55,7 @@ export default function App() {
   const [screen, setScreen] = useState(() => {
     if (window.location.hash === '#3d') return 'world';
     if (window.location.hash === '#shell') return 'shell';
-    return localStorage.getItem('gw_skip_hero') ? 'shell' : 'hero';
+    return 'hero';
   });
 
   // sync screen with hash so back/forward + share-links work
@@ -64,7 +64,7 @@ export default function App() {
       const h = window.location.hash;
       if (h === '#3d') setScreen('world');
       else if (h === '#shell') setScreen('shell');
-      else if (h === '' || h === '#') setScreen(localStorage.getItem('gw_skip_hero') ? 'shell' : 'hero');
+      else if (h === '' || h === '#') setScreen('hero');
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
@@ -72,13 +72,12 @@ export default function App() {
 
   function enterShell(opts = {}) {
     startFreshRun(opts);
-    localStorage.setItem('gw_skip_hero', '1');
+    window.location.hash = '#shell';
     setScreen('shell');
   }
 
   function enterWorld(opts = {}) {
     startFreshRun(opts);
-    localStorage.setItem('gw_skip_hero', '1');
     window.location.hash = '#3d';
     setScreen('world');
   }
@@ -112,18 +111,17 @@ export default function App() {
   }
 
   function backToHero() {
-    localStorage.removeItem('gw_skip_hero');
+    localStorage.removeItem('gw_skip_hero');  // legacy cleanup for old visitors
     window.location.hash = '';
     setScreen('hero');
   }
 
-  // briefing is shown on hero before entering; only auto-pop here if user
-  // bypassed hero (e.g. opened with #shell hash) and hasn't seen it yet.
+  // briefing pops in shell only if user bypassed hero via #shell hash AND
+  // hasn't seen it. Coming from hero → briefing already shown via Hero modal.
   useEffect(() => {
     if (screen !== 'shell') return;
     const seen = localStorage.getItem('rogue_welcome_seen');
-    const skippedHero = window.location.hash === '#shell';
-    if (!seen && skippedHero) setWelcomeOpen(true);
+    if (!seen && window.location.hash === '#shell') setWelcomeOpen(true);
   }, [screen]);
 
   // persist
