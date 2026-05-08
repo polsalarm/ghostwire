@@ -114,23 +114,23 @@ Live: https://cursor-ghostwire-delta.vercel.app/
 
 ---
 
-## Phase 3 — Module 2 (DATACENTER) ⚙️ in progress (v1 shipped)
+## Phase 3 — Module 2 (DATACENTER) ✅ 5/5 puzzles live (terminal)
 
 > *Goal: new content. New puzzles, new environment, module-select UI.*
 
-- [x] `shared/modules/registry.js` — module table (m1 live, m2 preview)
-- [x] Hero module-picker buttons (M1 / M2 [preview])
-- [x] M2 puzzle: JWT tampering (HS256 + leaked secret + role=admin claim)
-- [x] M2 puzzle: IDOR (GET /api/m2/user?id=NNN, magic id → flag)
+- [x] `shared/modules/registry.js` — module table (m1 live, m2 live)
+- [x] Hero module-picker buttons (M1 / M2)
+- [x] M2 L1 JWT_AUTH — HS256 + leaked secret + role=admin claim
+- [x] M2 L2 USER_API_IDOR — GET /api/m2/user?id=NNN
+- [x] M2 L3 THROTTLE_BYPASS — rotate client_id N times in 30s
+- [x] M2 L4 PROTO_POLLUTION — `__proto__` body trick on /api/m2/checkout
+- [x] M2 L5 HEADER_SMUGGLING — `smug X-Forwarded-Host=` command, /api/m2/proxy
 - [x] Per-module run-hash field, sanitized server-side
 - [x] App + Terminal + WorldShell propagate module through engine ctx
 - [x] Module-aware traffic + hints + solutions
-- [ ] M2 puzzle: rate-limit bypass (header rotation, IP spoof)
-- [ ] M2 puzzle: prototype pollution (JSON body trick)
-- [ ] M2 puzzle: header smuggling (CL.TE / TE.CL)
+- [x] **Per-module leaderboard filter** (ALL/M1/M2 chips + module badge per row)
 - [ ] M2 3D environment (datacenter chambers, props, lighting) — currently terminal-only
 - [ ] M2 module-specific lore / briefing
-- [ ] Per-module leaderboard filter (currently single board, module field stored)
 
 ---
 
