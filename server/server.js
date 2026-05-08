@@ -188,13 +188,28 @@ function sanitizeHandle(raw) {
 
 const dailyLb = {}; // date -> [run, ...]
 
+function sanitizeTrace(input) {
+  if (!Array.isArray(input)) return [];
+  const out = [];
+  for (const ev of input.slice(0, 200)) {
+    if (!ev || typeof ev !== 'object') continue;
+    const t = Math.max(0, Math.floor(Number(ev.t) || 0));
+    const c = typeof ev.c === 'string' ? ev.c.slice(0, 240) : null;
+    if (c) out.push({ t, c });
+  }
+  return out;
+}
+
+const traceStore = {}; // runId -> trace[]
+
 app.post('/api/run/finish', (req, res) => {
-  const { handle: rawHandle, timeMs: rawTime, hintsUsed: rawHints, seed: rawSeed, tier: rawTier } = req.body || {};
+  const { handle: rawHandle, timeMs: rawTime, hintsUsed: rawHints, seed: rawSeed, tier: rawTier, trace: rawTrace } = req.body || {};
   const handle = sanitizeHandle(rawHandle);
   const timeMs = Number(rawTime);
   const hintsUsed = Math.max(0, Math.floor(Number(rawHints) || 0));
   const seed = typeof rawSeed === 'string' ? rawSeed : 'DEFAULT';
   const tier = tierOrDefault(rawTier).id;
+  const trace = sanitizeTrace(rawTrace);
   if (!handle) return res.status(400).json(cryptic('BAD_HANDLE', 'handle must be 2-16 chars [a-z0-9_-]'));
   if (!Number.isFinite(timeMs) || timeMs < LB_MIN_TIME || timeMs > LB_MAX_TIME) {
     return res.status(400).json(cryptic('BAD_TIME', 'timeMs out of range'));
@@ -202,7 +217,9 @@ app.post('/api/run/finish', (req, res) => {
   const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   const mul = tierOrDefault(tier).mul;
   const score = Math.round((timeMs + hintsUsed * 5000) * mul);
-  const entry = { runId, handle, timeMs, hintsUsed, score, ts: Date.now(), seed, tier };
+  const hasTrace = trace.length > 0;
+  const entry = { runId, handle, timeMs, hintsUsed, score, ts: Date.now(), seed, tier, hasTrace };
+  if (hasTrace) traceStore[runId] = trace;
   lb.push(entry);
   lb.sort((a, b) => a.score - b.score);
   if (lb.length > 1000) lb.length = 1000;
@@ -238,6 +255,20 @@ app.get('/api/leaderboard', (req, res) => {
   }
   const entries = source.slice(0, limit).map((r, i) => ({ rank: i + 1, ...r }));
   res.json({ window: label, count: entries.length, entries });
+});
+
+app.get('/api/run/replay', (req, res) => {
+  const id = String(req.query.id || '');
+  const entry = lb.find(r => r.runId === id);
+  if (!entry) return res.status(404).json(cryptic('NOT_FOUND', 'run not found'));
+  res.json({
+    runId: id,
+    handle: entry.handle,
+    timeMs: entry.timeMs,
+    tier: entry.tier,
+    seed: entry.seed,
+    trace: traceStore[id] || []
+  });
 });
 
 // ─── meta ────────────────────────────────────────────────────────────────

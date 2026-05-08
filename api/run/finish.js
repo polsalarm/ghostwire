@@ -19,6 +19,18 @@ function score(timeMs, hintsUsed, tier) {
   return Math.round((timeMs + hintsUsed * 5_000) * t.mul);
 }
 
+function sanitizeTrace(input) {
+  if (!Array.isArray(input)) return [];
+  const out = [];
+  for (const ev of input.slice(0, 200)) {
+    if (!ev || typeof ev !== 'object') continue;
+    const t = Math.max(0, Math.floor(Number(ev.t) || 0));
+    const c = typeof ev.c === 'string' ? ev.c.slice(0, 240) : null;
+    if (c) out.push({ t, c });
+  }
+  return out;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return methodNotAllowed(res, 'POST');
   try {
@@ -28,6 +40,7 @@ export default async function handler(req, res) {
     const hintsUsed = Math.max(0, Math.floor(Number(body?.hintsUsed) || 0));
     const seed = typeof body?.seed === 'string' ? body.seed : 'DEFAULT';
     const tier = tierOrDefault(body?.tier).id;
+    const trace = sanitizeTrace(body?.trace);
 
     if (!handle) {
       return res.status(400).json(cryptic('BAD_HANDLE', 'handle must be 2-16 chars [a-z0-9_-]'));
@@ -54,8 +67,12 @@ export default async function handler(req, res) {
       score: s,
       ts: now,
       seed,
-      tier
+      tier,
+      hasTrace: trace.length > 0 ? 1 : 0
     };
+    if (trace.length > 0) {
+      detail.trace = JSON.stringify(trace);
+    }
 
     await redis.hset(`gw:run:${runId}`, detail);
     await redis.expire(`gw:run:${runId}`, 60 * 60 * 24 * 90);  // 90d retention

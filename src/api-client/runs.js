@@ -1,8 +1,8 @@
-export async function submitRun({ handle, timeMs, hintsUsed, seed, tier }) {
+export async function submitRun({ handle, timeMs, hintsUsed, seed, tier, trace }) {
   const r = await fetch('/api/run/finish', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ handle, timeMs, hintsUsed, seed, tier })
+    body: JSON.stringify({ handle, timeMs, hintsUsed, seed, tier, trace })
   });
   const data = await r.json().catch(() => null);
   if (!r.ok) throw new Error(data?.error || `submit_failed_${r.status}`);
@@ -14,5 +14,11 @@ export async function fetchLeaderboard({ limit = 100, window: win = 'alltime', d
   if (date) params.set('date', date);
   const r = await fetch(`/api/leaderboard?${params.toString()}`);
   if (!r.ok) throw new Error(`leaderboard_failed_${r.status}`);
+  return r.json();
+}
+
+export async function fetchReplay(runId) {
+  const r = await fetch(`/api/run/replay?id=${encodeURIComponent(runId)}`);
+  if (!r.ok) throw new Error(`replay_failed_${r.status}`);
   return r.json();
 }

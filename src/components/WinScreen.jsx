@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { submitRun, fetchLeaderboard } from '../api-client/runs.js';
+import { submitRun, fetchLeaderboard, fetchReplay } from '../api-client/runs.js';
 import { isDailySeed } from '../../shared/puzzles/rng.js';
 import { tierOrDefault } from '../../shared/puzzles/tier.js';
 import { bumpStreak, currentStreakDisplay } from '../streak.js';
+import { snapshot as snapshotTrace } from '../runRecorder.js';
+import ReplayModal from './ReplayModal.jsx';
 
 const ART = [
   '  ███████╗███████╗ ██████╗ █████╗ ██████╗ ███████╗',
@@ -32,6 +34,8 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
   const [boardErr, setBoardErr] = useState(null);
   const [activeTab, setActiveTab] = useState(seed && isDailySeed(seed) ? 'daily' : 'alltime');
   const [streak, setStreak] = useState(0);
+  const [replay, setReplay] = useState(null); // { runId, handle, trace }
+  const [replayLoading, setReplayLoading] = useState(null); // runId being fetched
 
   const isDaily = isDailySeed(seed);
 
@@ -68,12 +72,14 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
     setSubmitErr(null);
     setSubmitting(true);
     try {
+      const trace = snapshotTrace();
       const result = await submitRun({
         handle: handle.trim(),
         timeMs: elapsedMs,
         hintsUsed,
         seed: seed || 'DEFAULT',
-        tier
+        tier,
+        trace
       });
       localStorage.setItem(HANDLE_KEY, result.handle);
       setMyRun(result);
@@ -85,9 +91,26 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
     }
   }
 
+  async function onWatchReplay(entry) {
+    if (!entry?.runId || replayLoading) return;
+    setReplayLoading(entry.runId);
+    try {
+      const data = await fetchReplay(entry.runId);
+      if (Array.isArray(data?.trace) && data.trace.length) {
+        setReplay({ runId: entry.runId, handle: entry.handle, trace: data.trace });
+      }
+    } catch (e) {
+      console.warn('replay fetch failed', e);
+    } finally {
+      setReplayLoading(null);
+    }
+  }
+
   if (!open) return null;
 
   return (
+    <>
+    <ReplayModal replay={replay} onClose={() => setReplay(null)} />
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 overflow-y-auto">
       <div className="max-w-3xl w-full bg-terminal-panel border-2 border-terminal-glow shadow-[0_0_60px_#10b98199] p-6 text-terminal-green font-mono my-6">
         <pre className="text-emerald-300 text-[10px] sm:text-xs leading-tight whitespace-pre">
@@ -202,6 +225,7 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
                     <th className="text-right">time</th>
                     <th className="text-right w-12">hints</th>
                     <th className="text-right w-16">score</th>
+                    <th className="text-right w-8">▶</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -219,6 +243,20 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
                         <td className="text-right">{fmtTime(e.timeMs)}</td>
                         <td className="text-right">{e.hintsUsed}</td>
                         <td className="text-right">{e.score}</td>
+                        <td className="text-right">
+                          {e.hasTrace ? (
+                            <button
+                              onClick={() => onWatchReplay(e)}
+                              disabled={replayLoading === e.runId}
+                              className="text-terminal-glow/80 hover:text-terminal-glow disabled:opacity-50"
+                              title="watch ghost replay"
+                            >
+                              {replayLoading === e.runId ? '…' : '▶'}
+                            </button>
+                          ) : (
+                            <span className="text-terminal-green/30">—</span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -252,5 +290,6 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
         </div>
       </div>
     </div>
+    </>
   );
 }

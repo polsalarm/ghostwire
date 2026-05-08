@@ -8,6 +8,7 @@ import Hero from './Hero.jsx';
 import { sfx } from './fx/sound.js';
 import { dailySeed, todayUTC, isDailySeed } from '../shared/puzzles/rng.js';
 import { TIERS, tierOrDefault } from '../shared/puzzles/tier.js';
+import { startRecording, stopRecording, snapshot as snapshotTrace } from './runRecorder.js';
 
 const WorldShell = lazy(() => import('./world/WorldShell.jsx'));
 
@@ -95,6 +96,7 @@ export default function App() {
     setElapsed(null);
     setWinOpen(false);
     setExpiredOpen(false);
+    startRecording();
   }
 
   function dismissExpired() {
@@ -178,6 +180,7 @@ export default function App() {
 
   function onWin() {
     setElapsed(Date.now() - startRef.current);
+    stopRecording();
     setWinOpen(true);
   }
 

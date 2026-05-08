@@ -43,7 +43,8 @@ export default async function handler(req, res) {
         score: Number(r.score) || 0,
         ts: Number(r.ts) || 0,
         seed: r.seed || 'DEFAULT',
-        tier: r.tier || 'story'
+        tier: r.tier || 'story',
+        hasTrace: Number(r.hasTrace) === 1
       };
     }).filter(e => e.handle && e.score > 0);
 

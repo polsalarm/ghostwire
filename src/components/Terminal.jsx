@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { runCommand, BRIEFINGS } from '../game/engine.js';
 import { sfx } from '../fx/sound.js';
+import { recordCommand } from '../runRecorder.js';
 
 const BANNER = [
   '╔══════════════════════════════════════════════════════╗',
@@ -129,6 +130,7 @@ export default function Terminal({
     setCmdHistory(h => [...h, cmd]);
     setCmdIndex(-1);
     sfx.submit();
+    recordCommand(cmd);
 
     // local-only commands handled here for snappier UX
     if (cmd === 'reset' || cmd === 'restart') {
