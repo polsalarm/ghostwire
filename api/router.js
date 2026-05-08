@@ -1,29 +1,15 @@
-import { Redis } from '@upstash/redis';
+import { redis, playerKey } from './_kv.js';
 import { readJsonBody, cryptic, methodNotAllowed } from './_state.js';
 
 const WINDOW_MS = 2000;
 const THRESHOLD = 12;
-
-const redis = new Redis({
-  url: process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN
-});
-
-// Per-player bucket. Uses x-forwarded-for so concurrent floods from one
-// client share state across lambda instances, but two players don't
-// interfere with each other.
-function bucketKey(req) {
-  const fwd = req.headers['x-forwarded-for'] || '';
-  const ip = fwd.split(',')[0].trim() || 'unknown';
-  return `gw:router:${ip}`;
-}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return methodNotAllowed(res, 'POST');
   const body = await readJsonBody(req);
   const { temperature, status } = body || {};
   const now = Date.now();
-  const key = bucketKey(req);
+  const key = playerKey(req, 'router');
 
   const cond = temperature === 180 && status === 'critical';
 
