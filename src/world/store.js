@@ -26,6 +26,7 @@ export const useWorld = create((set, get) => ({
     next.add(id);
     return { revealedChambers: next };
   }),
+  resetRevealedChambers: () => set({ revealedChambers: new Set() }),
 
   // currently-near scan pad (for HUD prompt)
   nearPad: null,

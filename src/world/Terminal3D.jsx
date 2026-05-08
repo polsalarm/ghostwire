@@ -1,8 +1,29 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Text } from '@react-three/drei';
+import * as THREE from 'three';
 import { useWorld } from './store.js';
 import { sfx } from '../fx/sound.js';
+
+// Tiny synthetic hum buffer — looped per terminal as a positional audio source.
+// Different fundamental per node so each lock has its own "voice" in space.
+function buildHumBuffer(ctx, freq) {
+  const seconds = 1.0;
+  const len = ctx.sampleRate * seconds;
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) {
+    const t = i / ctx.sampleRate;
+    data[i] = (
+      Math.sin(2 * Math.PI * freq * t) * 0.4 +
+      Math.sin(2 * Math.PI * (freq * 1.5) * t) * 0.15 +
+      (Math.random() - 0.5) * 0.05
+    ) * 0.3;
+  }
+  return buf;
+}
+
+const HUM_FREQ = { gate: 110, router: 138, pipeline: 92 };
 
 const PROXIMITY = 2.6;
 
@@ -16,10 +37,66 @@ export default function Terminal3D({ id, position, rotation = [0, 0, 0] }) {
   const ref = useRef();
   const screenRef = useRef();
   const ledRef = useRef();
+  const audioRef = useRef();
   const { unlocked, nearTerminal, setNearTerminal, openTerminal, playerPos } = useWorld();
   const isUnlocked = unlocked.includes(id);
   const isNear = nearTerminal === id;
   const meta = META[id] || { label: id, color: '#10b981' };
+
+  // Spawn a positional audio source on this terminal — silent until the
+  // user has interacted with the page (browser autoplay policy). Buffer
+  // is built lazily so we don't pay AudioContext init cost upfront.
+  useEffect(() => {
+    let canceled = false;
+    const tryStart = () => {
+      if (canceled || audioRef.current) return;
+      const Ctor = window.AudioContext || window.webkitAudioContext;
+      if (!Ctor) return;
+      const ctx = new Ctor();
+      const buf = buildHumBuffer(ctx, HUM_FREQ[id] || 100);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      // 3D panner — ref position will be moved each frame via group transform
+      const panner = ctx.createPanner();
+      panner.panningModel = 'HRTF';
+      panner.distanceModel = 'inverse';
+      panner.refDistance = 1.2;
+      panner.maxDistance = 18;
+      panner.rolloffFactor = 1.5;
+      panner.positionX.value = position[0];
+      panner.positionY.value = position[1] + 1.1;
+      panner.positionZ.value = position[2];
+      src.connect(gain).connect(panner).connect(ctx.destination);
+      try { src.start(); } catch {}
+      audioRef.current = { ctx, gain };
+      // ramp up
+      gain.gain.linearRampToValueAtTime(isUnlocked ? 0.04 : 0.12, ctx.currentTime + 0.6);
+    };
+    const onFirstInteract = () => { tryStart(); window.removeEventListener('pointerdown', onFirstInteract); };
+    window.addEventListener('pointerdown', onFirstInteract);
+    return () => {
+      canceled = true;
+      window.removeEventListener('pointerdown', onFirstInteract);
+      const a = audioRef.current;
+      if (a?.ctx) {
+        try { a.ctx.close(); } catch {}
+      }
+      audioRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  // when lock state changes, taper the hum down (still alive but quieter)
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    const target = isUnlocked ? 0.04 : 0.12;
+    a.gain.gain.cancelScheduledValues(a.ctx.currentTime);
+    a.gain.gain.linearRampToValueAtTime(target, a.ctx.currentTime + 0.5);
+  }, [isUnlocked]);
 
   useFrame((state) => {
     const [px, , pz] = playerPos;

@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { Environment } from '@react-three/drei';
+import { Environment, PerformanceMonitor } from '@react-three/drei';
 import {
   EffectComposer, Bloom, ChromaticAberration, Scanline, Vignette, Noise
 } from '@react-three/postprocessing';
@@ -10,13 +10,27 @@ import Room from './Room.jsx';
 import Flythrough from './Flythrough.jsx';
 
 export default function Scene({ onFlythroughDone }) {
+  const [dpr, setDpr] = useState(window.devicePixelRatio > 1 ? 1.5 : 1);
+  const [enableShadows, setEnableShadows] = useState(true);
+  const [heavyFx, setHeavyFx] = useState(true);
+
   return (
     <Canvas
-      shadows
+      shadows={enableShadows}
+      dpr={dpr}
       camera={{ position: [0, 5, 18], fov: 55 }}
-      gl={{ antialias: true, alpha: false }}
+      gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
       style={{ background: '#020404' }}
     >
+      <PerformanceMonitor
+        bounds={() => [40, 60]}
+        onIncline={() => setDpr(d => Math.min(window.devicePixelRatio || 2, d + 0.25))}
+        onDecline={() => {
+          setDpr(d => Math.max(0.75, d - 0.25));
+          setHeavyFx(false);
+          setEnableShadows(false);
+        }}
+      />
       {/* fog cuts the corridor for atmosphere */}
       <fog attach="fog" args={['#020404', 8, 32]} />
 
@@ -35,10 +49,10 @@ export default function Scene({ onFlythroughDone }) {
       <Flythrough onDone={onFlythroughDone} />
 
       <EffectComposer multisampling={0}>
-        <Bloom intensity={0.55} luminanceThreshold={0.35} luminanceSmoothing={0.4} mipmapBlur />
-        <ChromaticAberration offset={[0.0009, 0.0014]} blendFunction={BlendFunction.NORMAL} />
-        <Scanline density={1.4} opacity={0.07} blendFunction={BlendFunction.OVERLAY} />
-        <Noise opacity={0.05} blendFunction={BlendFunction.OVERLAY} />
+        <Bloom intensity={heavyFx ? 0.55 : 0.3} luminanceThreshold={0.35} luminanceSmoothing={0.4} mipmapBlur />
+        {heavyFx && <ChromaticAberration offset={[0.0009, 0.0014]} blendFunction={BlendFunction.NORMAL} />}
+        <Scanline density={1.4} opacity={heavyFx ? 0.07 : 0.04} blendFunction={BlendFunction.OVERLAY} />
+        {heavyFx && <Noise opacity={0.05} blendFunction={BlendFunction.OVERLAY} />}
         <Vignette eskil={false} offset={0.15} darkness={0.85} />
       </EffectComposer>
     </Canvas>

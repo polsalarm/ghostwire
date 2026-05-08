@@ -22,12 +22,23 @@ export default function WorldShell({
   const activeTerminal = useWorld(s => s.activeTerminal);
   const startFlythrough = useWorld(s => s.startFlythrough);
   const endFlythrough = useWorld(s => s.endFlythrough);
+  const resetRevealedChambers = useWorld(s => s.resetRevealedChambers);
   const prevUnlockedLen = useRef(unlocked.length);
   const [worldBanner, setWorldBanner] = useState(null);
   const [overlayBanner, setOverlayBanner] = useState(null);
   const pendingWin = useRef(false);
 
   useEffect(() => { setUnlockedStore(unlocked); }, [unlocked, setUnlockedStore]);
+
+  // when a fresh run starts (unlocked goes 0 after a previous run), wipe
+  // chamber decrypt state so wall hints re-encrypt and SCAN_PADs reset
+  const prevUnlockedHadProgress = useRef(unlocked.length > 0);
+  useEffect(() => {
+    if (unlocked.length === 0 && prevUnlockedHadProgress.current) {
+      resetRevealedChambers();
+    }
+    prevUnlockedHadProgress.current = unlocked.length > 0;
+  }, [unlocked, resetRevealedChambers]);
 
   useEffect(() => {
     if (unlocked.length > prevUnlockedLen.current && activeTerminal) {
