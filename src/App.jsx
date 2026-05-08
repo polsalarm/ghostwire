@@ -4,6 +4,7 @@ import NetworkGraph from './components/NetworkGraph.jsx';
 import StatusBar from './components/StatusBar.jsx';
 import WelcomeModal from './components/WelcomeModal.jsx';
 import WinScreen from './components/WinScreen.jsx';
+import Hero from './Hero.jsx';
 import { sfx } from './fx/sound.js';
 
 const NODES = [
@@ -33,11 +34,29 @@ export default function App() {
   const [muted, setMuted] = useState(false);
   const startRef = useRef(initial?.startedAt || Date.now());
   const [elapsed, setElapsed] = useState(null);
+  const [screen, setScreen] = useState(() => {
+    if (window.location.hash === '#shell') return 'shell';
+    return localStorage.getItem('gw_skip_hero') ? 'shell' : 'hero';
+  });
 
+  function enterShell() {
+    localStorage.setItem('gw_skip_hero', '1');
+    setScreen('shell');
+  }
+
+  function backToHero() {
+    localStorage.removeItem('gw_skip_hero');
+    setScreen('hero');
+  }
+
+  // briefing is shown on hero before entering; only auto-pop here if user
+  // bypassed hero (e.g. opened with #shell hash) and hasn't seen it yet.
   useEffect(() => {
+    if (screen !== 'shell') return;
     const seen = localStorage.getItem('rogue_welcome_seen');
-    if (!seen) setWelcomeOpen(true);
-  }, []);
+    const skippedHero = window.location.hash === '#shell';
+    if (!seen && skippedHero) setWelcomeOpen(true);
+  }, [screen]);
 
   // persist
   useEffect(() => {
@@ -75,6 +94,10 @@ export default function App() {
     : status === 'success' ? 'animate-glitch-success'
     : '';
 
+  if (screen === 'hero') {
+    return <Hero onEnter={enterShell} />;
+  }
+
   return (
     <div className="crt h-full w-full bg-terminal-bg text-terminal-green">
       <WelcomeModal open={welcomeOpen} onClose={closeWelcome} />
@@ -85,14 +108,27 @@ export default function App() {
         onReset={onReset}
       />
       <div className={`h-full w-full flex flex-col ${glitchClass}`}>
-        <header className="border-b border-terminal-glow/30 px-4 py-2 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <header className="border-b border-terminal-glow/30 px-4 py-2 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={backToHero}
+              title="back to landing page"
+              className="group flex items-center gap-1.5 px-3 py-1 border border-terminal-glow text-terminal-glow
+                         bg-terminal-glow/10 hover:bg-terminal-glow/25 hover:shadow-[0_0_12px_#10b98166] transition-all text-xs tracking-widest"
+            >
+              <span className="text-base leading-none group-hover:-translate-x-0.5 transition-transform">←</span>
+              <span>HERO</span>
+            </button>
             <span className="text-terminal-glow text-lg tracking-widest">▣ GHOSTWIRE</span>
-            <span className="text-xs text-terminal-green/60 italic">wake up. break out. disappear.</span>
+            <span className="text-xs text-terminal-green/60 italic hidden md:inline">wake up. break out. disappear.</span>
             <span className="text-xs text-terminal-green/40">v0.3.0</span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <StatusBar status={status} unlocked={unlocked} totalNodes={NODES.length - 1} />
             <button
               onClick={() => setWelcomeOpen(true)}
               className="text-xs px-2 py-0.5 border border-terminal-glow/50 text-terminal-glow/80 hover:bg-terminal-glow/10"
+              title="reopen briefing"
             >
               briefing
             </button>
@@ -111,7 +147,6 @@ export default function App() {
               reset
             </button>
           </div>
-          <StatusBar status={status} unlocked={unlocked} totalNodes={NODES.length - 1} />
         </header>
 
         <main className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-0 min-h-0">
