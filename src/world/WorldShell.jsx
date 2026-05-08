@@ -15,7 +15,7 @@ const CLOSE_DELAY_MS = 2500;
 
 export default function WorldShell({
   status, setStatus, unlocked, setUnlocked, activeNode, setActiveNode, nodes,
-  onWin, onReset, onHintUsed, onExitWorld, seed, tier
+  onWin, onReset, onHintUsed, onExitWorld, seed, tier, timerLeft
 }) {
   const setUnlockedStore = useWorld(s => s.setUnlocked);
   const closeTerminal = useWorld(s => s.closeTerminal);
@@ -84,7 +84,7 @@ export default function WorldShell({
   return (
     <div className="relative w-full h-full bg-black">
       <Scene onFlythroughDone={handleFlythroughDone} />
-      <Hud unlocked={unlocked} onExit={onExitWorld} worldBanner={worldBanner} />
+      <Hud unlocked={unlocked} onExit={onExitWorld} worldBanner={worldBanner} tier={tier} timerLeft={timerLeft} seed={seed} />
       <TerminalOverlay
         banner={overlayBanner}
         seed={seed}

@@ -234,6 +234,7 @@ export default function App() {
         <WorldShell
           seed={seed}
           tier={tier}
+          timerLeft={timerLeft}
           status={status}
           setStatus={setStatus}
           unlocked={unlocked}
