@@ -1,5 +1,5 @@
 import { redis } from './_kv.js';
-import { todayUTC } from '../shared/puzzles/rng.js';
+import { todayUTC, weekStartUTC } from '../shared/puzzles/rng.js';
 import { cryptic, methodNotAllowed } from './_state.js';
 
 const DEFAULT_LIMIT = 100;
@@ -9,6 +9,10 @@ function keyForWindow(win, dateParam) {
   if (win === 'daily') {
     const d = dateParam || todayUTC();
     return { key: `gw:lb:daily:${d}`, label: `daily:${d}` };
+  }
+  if (win === 'weekly') {
+    const d = dateParam || weekStartUTC();
+    return { key: `gw:lb:weekly:${d}`, label: `weekly:${d}` };
   }
   return { key: 'gw:lb:alltime', label: 'alltime' };
 }

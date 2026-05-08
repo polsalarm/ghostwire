@@ -4,7 +4,7 @@ import { genGate } from '../shared/puzzles/gate.js';
 import { genRouter } from '../shared/puzzles/router.js';
 import { genPipeline } from '../shared/puzzles/pipeline.js';
 import {
-  dailySeed, todayUTC, secondsUntilNextUtcDay, isDailySeed
+  dailySeed, todayUTC, secondsUntilNextUtcDay, isDailySeed, weekStartUTC
 } from '../shared/puzzles/rng.js';
 import { tierOrDefault } from '../shared/puzzles/tier.js';
 
@@ -186,7 +186,8 @@ function sanitizeHandle(raw) {
   return h.length >= 2 ? h : null;
 }
 
-const dailyLb = {}; // date -> [run, ...]
+const dailyLb = {};  // date -> [run, ...]
+const weeklyLb = {}; // weekStart -> [run, ...]
 
 function sanitizeTrace(input) {
   if (!Array.isArray(input)) return [];
@@ -221,6 +222,11 @@ app.post('/api/run/finish', (req, res) => {
   const entry = { runId, handle, timeMs, hintsUsed, score, ts: Date.now(), seed, tier, hasTrace };
   if (hasTrace) traceStore[runId] = trace;
   lb.push(entry);
+  const wk = weekStartUTC();
+  if (!weeklyLb[wk]) weeklyLb[wk] = [];
+  weeklyLb[wk].push(entry);
+  weeklyLb[wk].sort((a, b) => a.score - b.score);
+  if (weeklyLb[wk].length > 1000) weeklyLb[wk].length = 1000;
   lb.sort((a, b) => a.score - b.score);
   if (lb.length > 1000) lb.length = 1000;
   const rank = lb.findIndex(r => r.runId === runId);
@@ -252,6 +258,10 @@ app.get('/api/leaderboard', (req, res) => {
   if (win === 'daily') {
     source = dailyLb[date] || [];
     label = `daily:${date}`;
+  } else if (win === 'weekly') {
+    const wk = req.query.date || weekStartUTC();
+    source = weeklyLb[wk] || [];
+    label = `weekly:${wk}`;
   }
   const entries = source.slice(0, limit).map((r, i) => ({ rank: i + 1, ...r }));
   res.json({ window: label, count: entries.length, entries });

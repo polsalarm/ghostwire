@@ -33,6 +33,7 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
   const [board, setBoard] = useState(null);
   const [boardErr, setBoardErr] = useState(null);
   const [activeTab, setActiveTab] = useState(seed && isDailySeed(seed) ? 'daily' : 'alltime');
+  const [tierFilter, setTierFilter] = useState('all'); // all | story | hardened | ghost
   const [streak, setStreak] = useState(0);
   const [replay, setReplay] = useState(null); // { runId, handle, trace }
   const [replayLoading, setReplayLoading] = useState(null); // runId being fetched
@@ -60,11 +61,17 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
     if (!open) return;
     setBoard(null);
     setBoardErr(null);
-    const opts = activeTab === 'daily'
-      ? { window: 'daily', limit: 50, date: isDaily ? seed.slice(2) : undefined }
-      : { window: 'alltime', limit: 50 };
+    let opts;
+    if (activeTab === 'daily') opts = { window: 'daily', limit: 100, date: isDaily ? seed.slice(2) : undefined };
+    else if (activeTab === 'weekly') opts = { window: 'weekly', limit: 100 };
+    else opts = { window: 'alltime', limit: 100 };
     fetchLeaderboard(opts).then(setBoard).catch(e => setBoardErr(String(e?.message || e)));
   }, [open, activeTab, myRun, isDaily, seed]);
+
+  const filteredEntries = (board?.entries || []).filter(e => {
+    if (tierFilter === 'all') return true;
+    return (e.tier || 'story') === tierFilter;
+  });
 
   async function onSubmit(e) {
     e?.preventDefault();
@@ -190,7 +197,7 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
         )}
 
         <div className="mt-5 bg-black/40 border border-terminal-glow/30 p-3 text-xs">
-          <div className="flex items-center gap-3 mb-2">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
             <span className="text-terminal-glow">// LEADERBOARD</span>
             <button
               onClick={() => setActiveTab('alltime')}
@@ -201,6 +208,15 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
               ALLTIME
             </button>
             <button
+              onClick={() => setActiveTab('weekly')}
+              className={`px-2 py-0.5 border text-[11px] ${activeTab === 'weekly'
+                ? 'border-cyan-400 text-cyan-300 bg-cyan-500/10'
+                : 'border-cyan-400/30 text-cyan-300/60 hover:bg-cyan-500/10'}`}
+              title="this week (Mon-Sun UTC)"
+            >
+              WEEKLY
+            </button>
+            <button
               onClick={() => setActiveTab('daily')}
               className={`px-2 py-0.5 border text-[11px] ${activeTab === 'daily'
                 ? 'border-amber-400 text-amber-300 bg-amber-500/10'
@@ -209,13 +225,30 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
             >
               DAILY{isDaily ? ` ${seed.slice(2)}` : ''}
             </button>
+            <span className="ml-auto text-terminal-green/40 text-[10px]">tier:</span>
+            {['all', 'story', 'hardened', 'ghost'].map(t => (
+              <button
+                key={t}
+                onClick={() => setTierFilter(t)}
+                className={`px-1.5 py-0.5 border text-[10px] tracking-wide ${tierFilter === t
+                  ? t === 'ghost' ? 'border-fuchsia-400 text-fuchsia-300 bg-fuchsia-500/10'
+                  : t === 'hardened' ? 'border-rose-400 text-rose-300 bg-rose-500/10'
+                  : 'border-terminal-glow text-terminal-glow bg-terminal-glow/15'
+                  : 'border-terminal-glow/20 text-terminal-green/40 hover:bg-terminal-glow/5'}`}
+              >
+                {t.toUpperCase()}
+              </button>
+            ))}
           </div>
           {boardErr && <div className="text-terminal-red">{boardErr}</div>}
           {!board && !boardErr && <div className="text-terminal-green/50">loading...</div>}
           {board?.entries?.length === 0 && (
             <div className="text-terminal-green/60">no runs yet — be the first.</div>
           )}
-          {board?.entries?.length > 0 && (
+          {board?.entries?.length > 0 && filteredEntries.length === 0 && (
+            <div className="text-terminal-green/60">no {tierFilter} runs in this window yet.</div>
+          )}
+          {filteredEntries.length > 0 && (
             <div className="max-h-64 overflow-y-auto pr-1">
               <table className="w-full text-[11px]">
                 <thead className="text-terminal-green/50 sticky top-0 bg-black/80">
@@ -229,7 +262,7 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
                   </tr>
                 </thead>
                 <tbody>
-                  {board.entries.map((e) => {
+                  {filteredEntries.map((e) => {
                     const me = myRun && e.runId === myRun.runId;
                     const tBadge = e.tier === 'ghost' ? '◆' : e.tier === 'hardened' ? '▲' : '';
                     const tColor = e.tier === 'ghost' ? 'text-fuchsia-300' : e.tier === 'hardened' ? 'text-rose-300' : '';

@@ -1,6 +1,6 @@
 import { redis, playerKey } from '../_kv.js';
 import { readJsonBody, cryptic, methodNotAllowed } from '../_state.js';
-import { isDailySeed } from '../../shared/puzzles/rng.js';
+import { isDailySeed, weekStartUTC } from '../../shared/puzzles/rng.js';
 import { tierOrDefault } from '../../shared/puzzles/tier.js';
 
 const MIN_TIME_MS = 5_000;        // sub-5s impossible (typewriter alone is longer)
@@ -79,13 +79,19 @@ export default async function handler(req, res) {
     await redis.zadd('gw:lb:alltime', { score: s, member: runId });
     await redis.zremrangebyrank('gw:lb:alltime', 1000, -1);
 
+    // weekly board (Monday-anchored, 21d retention)
+    const weekKey = `gw:lb:weekly:${weekStartUTC()}`;
+    await redis.zadd(weekKey, { score: s, member: runId });
+    await redis.zremrangebyrank(weekKey, 1000, -1);
+    await redis.expire(weekKey, 60 * 60 * 24 * 21);
+
     let dailyRank = null;
     if (isDailySeed(seed)) {
-      const date = seed.slice(2); // strip "d:" prefix
+      const date = seed.slice(2);
       const dailyKey = `gw:lb:daily:${date}`;
       await redis.zadd(dailyKey, { score: s, member: runId });
       await redis.zremrangebyrank(dailyKey, 1000, -1);
-      await redis.expire(dailyKey, 60 * 60 * 24 * 14); // 14d retention per board
+      await redis.expire(dailyKey, 60 * 60 * 24 * 14);
       const dr = await redis.zrank(dailyKey, runId);
       dailyRank = typeof dr === 'number' ? dr + 1 : null;
     }

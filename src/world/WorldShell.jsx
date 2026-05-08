@@ -13,9 +13,6 @@ const NEXT_HINT = {
 
 const CLOSE_DELAY_MS = 2500;
 
-// 3D shell. Receives all puzzle state from <App /> and forwards to embedded
-// Terminal via TerminalOverlay. Sync `unlocked` into zustand so 3D props
-// (doors, terminal screens) react.
 export default function WorldShell({
   status, setStatus, unlocked, setUnlocked, activeNode, setActiveNode, nodes,
   onWin, onReset, onHintUsed, onExitWorld, seed, tier
@@ -23,21 +20,21 @@ export default function WorldShell({
   const setUnlockedStore = useWorld(s => s.setUnlocked);
   const closeTerminal = useWorld(s => s.closeTerminal);
   const activeTerminal = useWorld(s => s.activeTerminal);
+  const startFlythrough = useWorld(s => s.startFlythrough);
+  const endFlythrough = useWorld(s => s.endFlythrough);
   const prevUnlockedLen = useRef(unlocked.length);
   const [worldBanner, setWorldBanner] = useState(null);
   const [overlayBanner, setOverlayBanner] = useState(null);
+  const pendingWin = useRef(false);
 
-  // mirror App's unlocked into store
   useEffect(() => { setUnlockedStore(unlocked); }, [unlocked, setUnlockedStore]);
 
-  // detect new unlock while overlay is open → show banner + auto-disconnect
   useEffect(() => {
     if (unlocked.length > prevUnlockedLen.current && activeTerminal) {
       const justUnlocked = unlocked[unlocked.length - 1];
       const hint = NEXT_HINT[justUnlocked];
       if (hint) {
         setOverlayBanner(hint.msg);
-        // pipeline = final level → win screen handles flow, just leave overlay
         if (hint.next) {
           const t = setTimeout(() => {
             setOverlayBanner(null);
@@ -52,7 +49,6 @@ export default function WorldShell({
     prevUnlockedLen.current = unlocked.length;
   }, [unlocked, activeTerminal, closeTerminal]);
 
-  // Esc closes any open terminal overlay
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape' && activeTerminal) {
@@ -65,9 +61,29 @@ export default function WorldShell({
     return () => window.removeEventListener('keydown', onKey);
   }, [activeTerminal, closeTerminal]);
 
+  // Intercept the Terminal-issued win — start flythrough instead. Real
+  // onWin (modal pop) fires when Flythrough.onDone() runs.
+  function handleWinIntercept() {
+    if (pendingWin.current) return;
+    pendingWin.current = true;
+    setOverlayBanner(null);
+    closeTerminal();
+    setWorldBanner('▣ ESCAPE_COMPLETE · cinematic in progress');
+    sfx.win();
+    // small delay so the player sees the door begin to open before camera moves
+    setTimeout(() => startFlythrough(), 600);
+  }
+
+  function handleFlythroughDone() {
+    endFlythrough();
+    pendingWin.current = false;
+    setWorldBanner(null);
+    onWin?.();
+  }
+
   return (
     <div className="relative w-full h-full bg-black">
-      <Scene />
+      <Scene onFlythroughDone={handleFlythroughDone} />
       <Hud unlocked={unlocked} onExit={onExitWorld} worldBanner={worldBanner} />
       <TerminalOverlay
         banner={overlayBanner}
@@ -80,7 +96,7 @@ export default function WorldShell({
         activeNode={activeNode}
         setActiveNode={setActiveNode}
         nodes={nodes}
-        onWin={onWin}
+        onWin={handleWinIntercept}
         onReset={onReset}
         onHintUsed={onHintUsed}
       />

@@ -29,5 +29,10 @@ export const useWorld = create((set, get) => ({
 
   // currently-near scan pad (for HUD prompt)
   nearPad: null,
-  setNearPad: (id) => set({ nearPad: id })
+  setNearPad: (id) => set({ nearPad: id }),
+
+  // win-sequence camera fly-through (engaged after pipeline unlock)
+  flythrough: false,
+  startFlythrough: () => set({ flythrough: true }),
+  endFlythrough: () => set({ flythrough: false })
 }));

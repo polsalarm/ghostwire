@@ -73,6 +73,7 @@ export default function Hero({ onEnter, onEnter3D }) {
   const [streakCount, setStreakCount] = useState(0);
   const [dailyMode, setDailyMode] = useState(false); // when true, handleEnter starts a daily run
   const [tierChoice, setTierChoice] = useState('story'); // story | hardened | ghost
+  const [targetMode, setTargetMode] = useState('shell'); // 'shell' | 'world'
 
   // fetch daily config + load streak on mount
   React.useEffect(() => {
@@ -200,7 +201,11 @@ export default function Hero({ onEnter, onEnter3D }) {
   function closeBriefing() {
     localStorage.setItem('rogue_welcome_seen', '1');
     setBriefingOpen(false);
-    setTimeout(() => onEnter?.({ daily: dailyMode, tier: tierChoice }), 200);
+    const opts = { daily: dailyMode, tier: tierChoice };
+    setTimeout(() => {
+      if (targetMode === 'world') onEnter3D?.(opts);
+      else onEnter?.(opts);
+    }, 200);
   }
 
   function startDailyEnter() {
@@ -377,6 +382,35 @@ export default function Hero({ onEnter, onEnter3D }) {
             </button>
             <div className="text-[11px] tracking-[0.3em] text-[#9bffb0]/55">
               press <span className="text-[#ff8a4c]">[ENTER]</span> or <span className="text-[#ff8a4c]">[SPACE]</span> · cold boot, then briefing
+            </div>
+
+            {/* mode picker — 2D terminal vs walkable 3D escape room */}
+            <div className="flex gap-1.5 text-[10px] tracking-[0.25em] mt-1">
+              {[
+                { id: 'shell', label: '◧ TERMINAL', note: 'pure prompt — fast' },
+                { id: 'world', label: '◉ 3D ROOM',  note: 'walkable escape room — atmospheric' }
+              ].map(m => {
+                const active = targetMode === m.id;
+                const accent = m.id === 'world';
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => setTargetMode(m.id)}
+                    disabled={booting || briefingOpen}
+                    title={m.note}
+                    className={`px-2.5 py-1 border transition-colors ${
+                      active
+                        ? accent
+                          ? 'border-fuchsia-400 text-fuchsia-200 bg-fuchsia-500/15'
+                          : 'border-[#9bffb0] text-[#e8ffe8] bg-[#9bffb0]/15'
+                        : 'border-[#9bffb0]/30 text-[#9bffb0]/60 hover:bg-[#9bffb0]/10'
+                    }`}
+                    style={{ fontFamily: 'JetBrains Mono, monospace' }}
+                  >
+                    {m.label}
+                  </button>
+                );
+              })}
             </div>
 
             {/* daily challenge cta */}

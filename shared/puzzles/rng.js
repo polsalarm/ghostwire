@@ -49,3 +49,13 @@ export function secondsUntilNextUtcDay() {
   ));
   return Math.max(0, Math.floor((next - now) / 1000));
 }
+
+// Monday (UTC) of the week containing `date`, as YYYY-MM-DD.
+// Used as the weekly leaderboard window key.
+export function weekStartUTC(date = new Date()) {
+  const d = new Date(date);
+  const day = (d.getUTCDay() + 6) % 7; // Mon=0..Sun=6
+  d.setUTCDate(d.getUTCDate() - day);
+  d.setUTCHours(0, 0, 0, 0);
+  return d.toISOString().slice(0, 10);
+}

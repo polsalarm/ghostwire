@@ -1,10 +1,15 @@
 import React from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Environment } from '@react-three/drei';
+import {
+  EffectComposer, Bloom, ChromaticAberration, Scanline, Vignette, Noise
+} from '@react-three/postprocessing';
+import { BlendFunction } from 'postprocessing';
 import Player from './Player.jsx';
 import Room from './Room.jsx';
+import Flythrough from './Flythrough.jsx';
 
-export default function Scene() {
+export default function Scene({ onFlythroughDone }) {
   return (
     <Canvas
       shadows
@@ -27,6 +32,15 @@ export default function Scene() {
 
       <Room />
       <Player />
+      <Flythrough onDone={onFlythroughDone} />
+
+      <EffectComposer multisampling={0}>
+        <Bloom intensity={0.55} luminanceThreshold={0.35} luminanceSmoothing={0.4} mipmapBlur />
+        <ChromaticAberration offset={[0.0009, 0.0014]} blendFunction={BlendFunction.NORMAL} />
+        <Scanline density={1.4} opacity={0.07} blendFunction={BlendFunction.OVERLAY} />
+        <Noise opacity={0.05} blendFunction={BlendFunction.OVERLAY} />
+        <Vignette eskil={false} offset={0.15} darkness={0.85} />
+      </EffectComposer>
     </Canvas>
   );
 }

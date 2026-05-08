@@ -75,6 +75,12 @@ export default function Player() {
 
   useFrame((state, dt) => {
     if (!ref.current) return;
+    // disable input + chase camera during win flythrough
+    if (useWorld.getState().flythrough) {
+      const p = ref.current.position;
+      setPlayerPos([p.x, p.y, p.z]);
+      return;
+    }
     const fwd = (KEYS.w ? 1 : 0) - (KEYS.s ? 1 : 0);
     const right = (KEYS.d ? 1 : 0) - (KEYS.a ? 1 : 0);
 
