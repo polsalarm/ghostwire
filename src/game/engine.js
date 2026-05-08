@@ -1,6 +1,8 @@
 // Step 2 + tutorial: real backend calls + lore/hint/solve helpers.
 // Vite dev server proxies /api, /build, /test, /deploy, /healthz → :8787.
 import { genGate, gateHintLines } from '../../shared/puzzles/gate.js';
+import { genRouter, routerHintLines } from '../../shared/puzzles/router.js';
+import { genPipeline, pipelineHintLines } from '../../shared/puzzles/pipeline.js';
 
 const HELP_BASE = [
   'commands:',
@@ -77,42 +79,25 @@ const TRAFFIC_ENTRIES = [
 //   L2 — terse: names the fields + the trick, no exact values
 //   L3 — cryptic: mechanics only, no order, no commands; player must
 //        cross-reference `traffic` and the carved chamber walls
-function gateHints(seed) {
-  return gateHintLines(genGate(seed || 'DEFAULT'));
-}
-
-const ROUTER_HINT = [
-  '// L2 hint',
-  'router only forwards "critical" packets — { temperature, status }',
-  '  single packet → buffered, not routed',
-  '  burst within 2s overflows default branch',
-  '  the threshold leaks somewhere in `traffic`',
-  "(no payload spoonfed — read the wall, then craft it)"
-];
-
-const PIPELINE_HINT = [
-  '// L3 hint',
-  'CI/CD pipeline. 3 stages. order matters. clock matters.',
-  '  one stage starts the timer',
-  '  another ships',
-  '  the third must come between them',
-  '  total budget ≤ 5s. stale = 425. wrong order = 409.',
-  "(`traffic` has fragments of pipeline.yml — that's all you get)"
-];
-
 function hintsForLevel(lvl, seed) {
-  if (lvl === 'gate') return gateHints(seed);
-  if (lvl === 'router') return ROUTER_HINT;
-  if (lvl === 'pipeline') return PIPELINE_HINT;
+  const s = seed || 'DEFAULT';
+  if (lvl === 'gate')     return gateHintLines(genGate(s));
+  if (lvl === 'router')   return routerHintLines(genRouter(s));
+  if (lvl === 'pipeline') return pipelineHintLines(genPipeline(s));
   return ['no hint available'];
 }
 
 function solutionFor(lvl, seed) {
+  const s = seed || 'DEFAULT';
   if (lvl === 'gate') {
-    const g = genGate(seed || 'DEFAULT');
+    const g = genGate(s);
     return `POST /api/gate {"role":"admin","clearance_code":"${g.code}"}`;
   }
-  if (lvl === 'router') return 'flood /api/router 15 {"temperature":180,"status":"critical"}';
+  if (lvl === 'router') {
+    const r = genRouter(s);
+    const burst = r.threshold + 3;
+    return `flood /api/router ${burst} {"temperature":${r.temperature},"status":"${r.status}"}`;
+  }
   if (lvl === 'pipeline') return 'chain GET /build /test /deploy';
   return null;
 }
@@ -226,14 +211,15 @@ export async function runCommand(raw, ctx) {
     const [, path, jsonRaw] = post;
     let body;
     try { body = JSON.parse(jsonRaw); } catch { return err(['parse_error: payload not valid JSON']); }
-    if (path === '/api/gate' && ctx.seed && body && typeof body === 'object' && !('seed' in body)) {
+    if (ctx.seed && /^\/api\/(gate|router)$/i.test(path)
+        && body && typeof body === 'object' && !('seed' in body)) {
       body.seed = ctx.seed;
     }
     return await sendJson('POST', path, body);
   }
 
   const get = cmd.match(/^GET\s+(\S+)$/i);
-  if (get) return await sendJson('GET', get[1]);
+  if (get) return await sendJson('GET', withSeed(get[1], ctx.seed));
 
   const flood = cmd.match(/^flood\s+(\S+)\s+(\d+)\s+(.+)$/i);
   if (flood) {
@@ -241,16 +227,28 @@ export async function runCommand(raw, ctx) {
     const n = Math.min(parseInt(nRaw, 10), 50);
     let body;
     try { body = JSON.parse(jsonRaw); } catch { return err(['parse_error: payload not valid JSON']); }
+    if (ctx.seed && /^\/api\/router/i.test(path)
+        && body && typeof body === 'object' && !('seed' in body)) {
+      body.seed = ctx.seed;
+    }
     return await floodRequest(path, n, body);
   }
 
   const chain = cmd.match(/^chain\s+GET\s+(\S+)\s+(\S+)\s+(\S+)$/i);
   if (chain) {
     const [, p1, p2, p3] = chain;
-    return await chainGet([p1, p2, p3]);
+    return await chainGet([p1, p2, p3].map(p => withSeed(p, ctx.seed)));
   }
 
   return err([`unknown command: ${cmd.split(' ')[0]}`, 'type `help` or `story`']);
+}
+
+function withSeed(path, seed) {
+  if (!seed) return path;
+  // pipeline GETs (/build, /test, /deploy) take seed via query string
+  if (!/^\/(build|test|deploy)/.test(path)) return path;
+  if (path.includes('seed=')) return path;
+  return path + (path.includes('?') ? '&' : '?') + 'seed=' + encodeURIComponent(seed);
 }
 
 function currentLevel(ctx) {

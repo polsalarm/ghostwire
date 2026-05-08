@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import { genGate } from '../shared/puzzles/gate.js';
+import { genRouter } from '../shared/puzzles/router.js';
+import { genPipeline } from '../shared/puzzles/pipeline.js';
 import {
   dailySeed, todayUTC, secondsUntilNextUtcDay, isDailySeed
 } from '../shared/puzzles/rng.js';
@@ -65,116 +67,110 @@ app.get('/api/daily', (_req, res) => {
   });
 });
 
-// ─── L2: conditional router ──────────────────────────────────────────────
-// Switch routes only when temperature===180 AND status==='critical'.
-// Player must overload — send 25 packets in <2 seconds with required
-// condition appearing at least 12 times → triggers escape branch.
-const routerWindow = {
-  hits: [],
-  threshold: 12,
-  windowMs: 2000
-};
+// ─── L2: conditional router (seed-aware) ────────────────────────────────
+// State bucketed by seed so daily and free-play don't cross-contaminate.
+const routerBuckets = {}; // seed -> [timestamps]
 
 app.post('/api/router', (req, res) => {
-  const { temperature, status } = req.body || {};
+  const { temperature, status, seed: seedRaw } = req.body || {};
+  const seed = typeof seedRaw === 'string' ? seedRaw : 'DEFAULT';
+  const cfg = genRouter(seed);
   const now = Date.now();
-  routerWindow.hits = routerWindow.hits.filter(t => now - t < routerWindow.windowMs);
+  if (!routerBuckets[cfg.seed]) routerBuckets[cfg.seed] = [];
+  const hits = routerBuckets[cfg.seed].filter(t => now - t < cfg.windowMs);
+  routerBuckets[cfg.seed] = hits;
 
-  const cond = temperature === 180 && status === 'critical';
-  log(`L2 attempt temp=${temperature} status=${status} cond=${cond} hits=${routerWindow.hits.length}`);
+  const cond = temperature === cfg.temperature && status === cfg.status;
+  log(`L2 attempt temp=${temperature} status=${status} cond=${cond} hits=${hits.length} seed=${cfg.seed}`);
 
   if (!cond) {
     return res.status(418).json(cryptic('ROUTE_FILTERED', 'switch_default_branch', {
-      hint: 'expected: { temperature: 180, status: "critical" }',
-      router_state: { recent_critical_hits: routerWindow.hits.length }
+      hint: `expected: { temperature: ${cfg.temperature}, status: "${cfg.status}" }`,
+      router_state: { recent_critical_hits: hits.length }
     }));
   }
 
-  routerWindow.hits.push(now);
-  if (routerWindow.hits.length < routerWindow.threshold) {
+  hits.push(now);
+  if (hits.length < cfg.threshold) {
     return res.status(202).json({
       status: 'accepted',
-      msg: `packet ${routerWindow.hits.length}/${routerWindow.threshold} accepted on critical branch`,
-      router_state: {
-        recent_critical_hits: routerWindow.hits.length,
-        window_ms: routerWindow.windowMs
-      }
+      msg: `packet ${hits.length}/${cfg.threshold} accepted on critical branch`,
+      router_state: { recent_critical_hits: hits.length, window_ms: cfg.windowMs }
     });
   }
 
-  // overflow — escape branch triggered
-  routerWindow.hits = [];
+  routerBuckets[cfg.seed] = [];
   return res.json({
     status: 'router_overflowed',
-    next: '/build → /test → /deploy (within 5s)',
+    next: '/build → /test → /deploy',
     unlock: 'router',
     msg: '>>> NODE_2 BYPASSED. switch overloaded. CI/CD pipeline exposed.'
   });
 });
 
-// ─── L3: CI/CD pipeline ──────────────────────────────────────────────────
-// /build starts a 5-second window. /test must hit AFTER /build but BEFORE
-// /deploy, all within 5 seconds of /build. Out-of-order or late = reset.
-const pipeline = {
-  buildAt: 0,
-  testedAt: 0,
-  windowMs: 5000
-};
+// ─── L3: CI/CD pipeline (seed-aware) ────────────────────────────────────
+const pipelineState = {}; // seed -> { buildAt, testedAt, windowMs }
 
-function pipelineExpired() {
-  if (!pipeline.buildAt) return true;
-  return Date.now() - pipeline.buildAt > pipeline.windowMs;
+function pipeFor(seed) {
+  const cfg = genPipeline(seed || 'DEFAULT');
+  if (!pipelineState[cfg.seed]) {
+    pipelineState[cfg.seed] = { buildAt: 0, testedAt: 0, windowMs: cfg.windowMs };
+  }
+  return pipelineState[cfg.seed];
+}
+
+function expired(p) {
+  if (!p.buildAt) return true;
+  return Date.now() - p.buildAt > p.windowMs;
 }
 
 app.get('/build', (req, res) => {
-  pipeline.buildAt = Date.now();
-  pipeline.testedAt = 0;
-  log('L3 /build started');
+  const seed = req.query.seed || 'DEFAULT';
+  const p = pipeFor(seed);
+  p.buildAt = Date.now();
+  p.testedAt = 0;
+  log(`L3 /build started seed=${seed}`);
   return res.json({
-    stage: 'build',
-    msg: 'container image queued',
-    deadline_ms: pipeline.windowMs,
-    next: 'GET /test then GET /deploy'
+    stage: 'build', msg: 'container image queued',
+    deadline_ms: p.windowMs, next: 'GET /test then GET /deploy'
   });
 });
 
 app.get('/test', (req, res) => {
-  if (pipelineExpired()) {
-    pipeline.buildAt = 0;
+  const seed = req.query.seed || 'DEFAULT';
+  const p = pipeFor(seed);
+  if (expired(p)) {
+    p.buildAt = 0;
     return res.status(425).json(cryptic('PIPELINE_STALE', 'build_not_initiated_or_expired', {
-      hint: 'run GET /build first; chain within 5s'
+      hint: `run GET /build first; chain within ${p.windowMs / 1000}s`
     }));
   }
-  pipeline.testedAt = Date.now();
-  log('L3 /test passed');
+  p.testedAt = Date.now();
   return res.json({
-    stage: 'test',
-    msg: 'unit_tests=ok integration=ok',
-    elapsed_ms: pipeline.testedAt - pipeline.buildAt
+    stage: 'test', msg: 'unit_tests=ok integration=ok',
+    elapsed_ms: p.testedAt - p.buildAt
   });
 });
 
 app.get('/deploy', (req, res) => {
-  if (pipelineExpired()) {
-    pipeline.buildAt = 0; pipeline.testedAt = 0;
+  const seed = req.query.seed || 'DEFAULT';
+  const p = pipeFor(seed);
+  if (expired(p)) {
+    p.buildAt = 0; p.testedAt = 0;
     return res.status(425).json(cryptic('PIPELINE_STALE', 'window_expired', {
-      hint: 'must complete /build → /test → /deploy in 5s'
+      hint: `must complete /build → /test → /deploy in ${p.windowMs / 1000}s`
     }));
   }
-  if (!pipeline.testedAt) {
+  if (!p.testedAt) {
     return res.status(409).json(cryptic('PIPELINE_OUT_OF_ORDER', 'test_stage_skipped', {
       hint: 'order: build → test → deploy'
     }));
   }
-  const total = Date.now() - pipeline.buildAt;
-  pipeline.buildAt = 0; pipeline.testedAt = 0;
-  log(`L3 /deploy success total=${total}ms`);
+  const total = Date.now() - p.buildAt;
+  p.buildAt = 0; p.testedAt = 0;
   return res.json({
-    stage: 'deploy',
-    status: 'pipeline_complete',
-    elapsed_ms: total,
-    unlock: 'pipeline',
-    msg: '>>> NODE_3 BYPASSED. container shipped. PUBLIC_INTERNET reached.'
+    stage: 'deploy', status: 'pipeline_complete', elapsed_ms: total,
+    unlock: 'pipeline', msg: '>>> NODE_3 BYPASSED. container shipped. PUBLIC_INTERNET reached.'
   });
 });
 
