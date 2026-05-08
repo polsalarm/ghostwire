@@ -89,15 +89,18 @@ Live: https://cursor-ghostwire-delta.vercel.app/
 - [ ] Weekly leaderboard tab
 - [ ] Server-side streak tracking (currently client-only)
 
-### 2c — Difficulty tiers ⭐ NEXT
+### 2c — Difficulty tiers ✅
 
-- [ ] STORY tier (default — current, hint-rich)
-- [ ] HARDENED tier — 60s timer, no `solve`, hint shows location only
-- [ ] GHOST tier — no hints anywhere, leaderboard-only entry
-- [ ] Tier-select buttons on Hero (STORY / HARDENED / GHOST)
-- [ ] Score multiplier per tier (story ×1.0, hardened ×0.7, ghost ×0.4)
-- [ ] Tier badge in run hash + leaderboard rows
-- [ ] Per-tier filter on leaderboard (or single list with badges)
+- [x] STORY tier (default — full hints, no timer, ×1.0)
+- [x] HARDENED tier — 60s timer, no `solve`, hint=location, ×0.7
+- [x] GHOST tier — 60s timer, hint disabled, ×0.4
+- [x] Hero tier-select buttons (STORY / HARDENED / GHOST)
+- [x] Score multiplier baked into `score = (timeMs + 5s/hint) * tier.mul`
+- [x] Tier badge in run hash + leaderboard rows (▲ hardened, ◆ ghost)
+- [x] Header chip + WinScreen tier display
+- [x] ExpiredModal when 60s timer hits zero (forfeits run, no leaderboard entry)
+- [ ] Per-tier filter on leaderboard (single list with badges shipped; filter not yet)
+- [ ] Daily challenge tier-select (currently always STORY when daily clicked from Hero)
 
 ### 2d — Ghost replays
 
