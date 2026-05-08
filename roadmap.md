@@ -102,12 +102,15 @@ Live: https://cursor-ghostwire-delta.vercel.app/
 - [ ] Per-tier filter on leaderboard (single list with badges shipped; filter not yet)
 - [ ] Daily challenge tier-select (currently always STORY when daily clicked from Hero)
 
-### 2d — Ghost replays
+### 2d — Ghost replays ✅
 
-- [ ] `runRecorder.js` — capture input events + timestamps
-- [ ] Compress trace, upload to Upstash (or R2 / Vercel Blob)
-- [ ] Replay UI on leaderboard rows ("watch run")
-- [ ] Race-against-ghost mode in speedrun
+- [x] `src/runRecorder.js` — capture commands + ms-since-start, caps 200 events / 240 chars
+- [x] Trace stored as JSON in run hash; `hasTrace` flag in leaderboard rows
+- [x] `GET /api/run/replay?id=...` returns trace + metadata
+- [x] `ReplayModal` — typewriter playback with 1×/2×/4× speed picker, gap clamping
+- [x] Replay button (▶) on every leaderboard row with a stored trace
+- [ ] Race-against-ghost mode (live ghost overlay during your run — future)
+- [ ] Compression (currently raw JSON; ~1-2KB per typical run is fine, no rush)
 
 ---
 
