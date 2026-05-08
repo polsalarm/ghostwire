@@ -66,30 +66,38 @@ Live: https://cursor-ghostwire-delta.vercel.app/
 
 ### 2a — Mutation engine
 
-- [ ] `shared/puzzles/rng.js` — mulberry32 + helpers (pick, pickDigitsThatSumTo)
-- [ ] `shared/puzzles/gate.js` — generator: prefix, sumTarget, decoy clues
-- [ ] `shared/puzzles/router.js` — generator: threshold, temp value, status string
-- [ ] `shared/puzzles/pipeline.js` — generator: stage order, count, window
-- [ ] Server validates against generator (client never sees the answer for ranked modes)
-- [ ] Existing static puzzle = `seed=DEFAULT` for backward compat
-- [ ] Refactor `engine.js` HINTS to read from generator output
+- [x] `shared/puzzles/rng.js` — mulberry32 + FNV-1a + UTC date helpers
+- [x] `shared/puzzles/gate.js` — generator: prefix, sumTarget, code
+- [x] `shared/puzzles/router.js` — generator: threshold, temperature, status
+- [x] `shared/puzzles/pipeline.js` — generator: windowMs
+- [x] Server validates against generator (api/{gate,router,build,test,deploy})
+- [x] Existing static puzzle = `seed='DEFAULT'` for backward compat
+- [x] `engine.js` HINTS + SOLUTIONS read from generator output
+- [ ] Decoy clues in TRAFFIC_ENTRIES that update with seed
+- [ ] Pipeline stage-order randomization (currently only window mutates)
 
-### 2b — Daily challenge ⭐ NEXT
+### 2b — Daily challenge ✅
 
-- [ ] `GET /api/daily?date=YYYY-MM-DD` returns today's seeded puzzle config
-- [ ] Daily leaderboard zset key: `gw:lb:daily:YYYY-MM-DD`
-- [ ] Daily run finish writes to both alltime + daily zsets
-- [ ] WinScreen tab toggle: ALLTIME | DAILY | WEEKLY
-- [ ] Hero page banner: "today's puzzle resets in HH:MM"
-- [ ] Streak counter (localStorage + server) — daily play increments
+- [x] `GET /api/daily` returns today's seed + gate/router/pipeline configs
+- [x] Daily leaderboard zset: `gw:lb:daily:YYYY-MM-DD` (14d retention)
+- [x] Run finish writes alltime + daily zsets when seed is daily
+- [x] WinScreen ALLTIME ↔ DAILY tab toggle (your row highlighted in both)
+- [x] Hero amber `◇ PLAY DAILY [date]` button + UTC reset countdown
+- [x] Streak counter (localStorage v1) — bumped on daily-mode submission
+- [x] Header chip "◇ DAILY YYYY-MM-DD" when in daily mode
+- [x] Stale-day auto-reset: opening with old daily seed flips to free-play
+- [ ] Weekly leaderboard tab
+- [ ] Server-side streak tracking (currently client-only)
 
-### 2c — Difficulty tiers
+### 2c — Difficulty tiers ⭐ NEXT
 
 - [ ] STORY tier (default — current, hint-rich)
-- [ ] HARDENED tier — 60s timer, no `solve`, mutated payloads
-- [ ] GHOST tier — no hints, mutated, leaderboard-only entry
-- [ ] Tier-select screen on module entry
-- [ ] Score multiplier per tier (×1, ×1.5, ×3)
+- [ ] HARDENED tier — 60s timer, no `solve`, hint shows location only
+- [ ] GHOST tier — no hints anywhere, leaderboard-only entry
+- [ ] Tier-select buttons on Hero (STORY / HARDENED / GHOST)
+- [ ] Score multiplier per tier (story ×1.0, hardened ×0.7, ghost ×0.4)
+- [ ] Tier badge in run hash + leaderboard rows
+- [ ] Per-tier filter on leaderboard (or single list with badges)
 
 ### 2d — Ghost replays
 
