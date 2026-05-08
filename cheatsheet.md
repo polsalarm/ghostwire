@@ -6,7 +6,26 @@ Fast reference for live demo. Steal lines from this. Estimated full demo: **~3 m
 
 ---
 
+## 🌐 Live deploy
+
+- Production: **https://cursor-ghostwire-delta.vercel.app/**
+- GitHub: https://github.com/polsalarm/ghostwire
+- Auto-deploy: every push to `main` → Vercel rebuild ~60s.
+
+Stack on Vercel:
+- Frontend: Vite static build → CDN
+- Backend: serverless functions in `/api/*`
+- State: Upstash Redis (free tier) — shared L2 router window + L3 pipeline timing
+- Analytics: Vercel Web Analytics + `@vercel/analytics/react`
+
+Required env vars (Marketplace integration auto-injects):
+`KV_REST_API_URL`, `KV_REST_API_TOKEN`, `KV_REST_API_READ_ONLY_TOKEN`, `KV_URL`, `REDIS_URL`
+
+---
+
 ## 0 · Pre-flight (do BEFORE audience watches)
+
+**Local dev:**
 
 ```
 # terminal 1
@@ -18,6 +37,8 @@ npm run dev:server               # → "rogue_instance backend listening on :878
 npm install                      # only first time
 npm run dev                      # → http://localhost:5173
 ```
+
+**Live deploy demo:** just open https://cursor-ghostwire-delta.vercel.app/ — no local servers needed. Use this if your laptop is offline or you want zero pre-flight risk.
 
 Open browser, **clear save** so demo starts clean:
 - DevTools → Console → `localStorage.clear()` → reload
@@ -161,15 +182,21 @@ Click `[ NEW INSTANCE ]` → save wipes, all nodes re-lock, terminal back to fre
 
 ## 🆘 If something breaks mid-demo
 
-| symptom | fix |
-|---|---|
-| `network_error` in terminal | backend dead → restart `npm run dev:server` |
-| no glitch animation | hard refresh (Ctrl+Shift+R) — Tailwind JIT cache |
-| no sound | click anywhere first (browser autoplay policy); check `♪ on` |
-| stuck on L2 | hits decayed — run `flood` again, send all 15 |
-| stuck on L3 | window expired — start over with `chain GET /build /test /deploy` |
-| save corrupt | DevTools console: `localStorage.clear()` + reload |
-| typewriter feels slow | press Enter to skip current line, or type `skip` |
+| symptom | env | fix |
+|---|---|---|
+| `network_error` in terminal | local | backend dead → restart `npm run dev:server` |
+| `404 NOT_FOUND` on `/api/*` | deploy | Vercel functions not deployed → check `api/` committed + `vercel.json` present |
+| `500 FUNCTION_INVOCATION_FAILED` | deploy | Upstash env vars missing in prod → Vercel → Settings → Env Vars → Shared tab |
+| L2 `1/12` per request | deploy | shared state broken → confirm `api/router.js` uses `_kv.js` (Upstash), not `globalThis` |
+| L3 `build_not_initiated_or_expired` immediately | deploy | pipeline state lost → confirm `api/build.js`/`test.js`/`deploy.js` use Upstash, not cookies |
+| no glitch animation | both | hard refresh (Ctrl+Shift+R) — Tailwind JIT cache |
+| no sound | both | click anywhere first (browser autoplay policy); check `♪ on` |
+| stuck on L2 | both | hits decayed — run `flood` again, send all 15 |
+| stuck on L3 | both | window expired — start over with `chain GET /build /test /deploy` |
+| save corrupt | both | DevTools console: `localStorage.clear()` + reload |
+| typewriter feels slow | both | press Enter to skip current line, or type `skip` |
+
+**Quick deploy-health probe:** open `https://cursor-ghostwire-delta.vercel.app/api/healthz` — expect JSON `{"status":"ok",...}`. 404 = functions missing. 500 = env var/redis broken.
 
 ---
 
@@ -177,8 +204,20 @@ Click `[ NEW INSTANCE ]` → save wipes, all nodes re-lock, terminal back to fre
 
 ```
 cursor/
-├── server/server.js         # 3 puzzle endpoints, ~150 LOC
+├── api/                     # Vercel serverless functions (production backend)
+│   ├── _kv.js               # shared Upstash Redis client + per-IP key helper
+│   ├── _state.js            # JSON body parser + cryptic err shape + cookie helpers
+│   ├── gate.js              # L1 — stateless auth check
+│   ├── router.js            # L2 — Upstash zset sliding window
+│   ├── build.js             # L3 — Upstash key, sets ba=now
+│   ├── test.js              # L3 — validates ba, sets ta
+│   ├── deploy.js            # L3 — validates ba+ta, returns unlock
+│   └── healthz.js           # liveness probe
+├── server/server.js         # local-dev Express equivalent, ~150 LOC
+├── vercel.json              # framework=vite + rewrites /build /test /deploy /healthz → /api/*
 ├── src/App.jsx              # layout + persist + win + reset wiring
+├── src/main.jsx             # entry + <Analytics />
+├── src/Hero.jsx             # cyberpunk landing page
 ├── src/components/
 │   ├── Terminal.jsx         # typewriter queue + sfx + cmd parser
 │   ├── NetworkGraph.jsx     # SVG topology
@@ -189,6 +228,11 @@ cursor/
 ├── src/game/engine.js       # cmd parser → fetch backend
 └── src/fx/sound.js          # WebAudio synth (no assets)
 ```
+
+**Local vs deploy backend:**
+- Local: Vite proxies `/api`, `/build`, `/test`, `/deploy`, `/healthz` → `http://localhost:8787` (Express in `server/`).
+- Vercel: same paths → serverless functions in `api/` (state in Upstash Redis).
+- `engine.js` is unchanged — paths are relative, so same code runs against both.
 
 ---
 
