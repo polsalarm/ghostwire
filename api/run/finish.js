@@ -41,7 +41,7 @@ export default async function handler(req, res) {
     const seed = typeof body?.seed === 'string' ? body.seed : 'DEFAULT';
     const tier = tierOrDefault(body?.tier).id;
     const trace = sanitizeTrace(body?.trace);
-    const module = typeof body?.module === 'string' && /^m[1-5]$/.test(body.module) ? body.module : 'm1';
+    const mod = typeof body?.module === 'string' && /^m[1-5]$/.test(body.module) ? body.module : 'm1';
 
     if (!handle) {
       return res.status(400).json(cryptic('BAD_HANDLE', 'handle must be 2-16 chars [a-z0-9_-]'));
@@ -69,7 +69,7 @@ export default async function handler(req, res) {
       ts: now,
       seed,
       tier,
-      module,
+      module: mod,
       hasTrace: trace.length > 0 ? 1 : 0
     };
     if (trace.length > 0) {
@@ -112,9 +112,11 @@ export default async function handler(req, res) {
       tier
     });
   } catch (e) {
-    console.error('run/finish error:', e);
+    console.error('run/finish error:', e, e?.stack);
     return res.status(503).json(cryptic('UPSTREAM_DOWN', 'leaderboard_unavailable', {
-      detail: String(e?.message || e)
+      detail: String(e?.message || e),
+      hasUrl: !!(process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL),
+      hasToken: !!(process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN)
     }));
   }
 }
