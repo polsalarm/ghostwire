@@ -1,5 +1,6 @@
 // Step 2 + tutorial: real backend calls + lore/hint/solve helpers.
 // Vite dev server proxies /api, /build, /test, /deploy, /healthz → :8787.
+import { genGate, gateHintLines } from '../../shared/puzzles/gate.js';
 
 const HELP_BASE = [
   'commands:',
@@ -71,43 +72,50 @@ const TRAFFIC_ENTRIES = [
 ];
 
 // difficulty curve:
-//   L1 — explicit: tells you exactly what to send (gentle onboarding)
+//   L1 — explicit: tells you exactly what to send (gentle onboarding).
+//        Generated per seed so daily challenges have different codes.
 //   L2 — terse: names the fields + the trick, no exact values
 //   L3 — cryptic: mechanics only, no order, no commands; player must
 //        cross-reference `traffic` and the carved chamber walls
-const HINTS = {
-  gate: [
-    '// L1 hint',
-    'door checks { role, clearance_code }',
-    '  role must be "admin"',
-    '  clearance starts with "ZX9-" then 2 digits',
-    '  digit sum = 18 (only one 2-digit combo fits)',
-    'try: POST /api/gate {"role":"admin","clearance_code":"ZX9-99"}'
-  ],
-  router: [
-    '// L2 hint',
-    'router only forwards "critical" packets — { temperature, status }',
-    '  single packet → buffered, not routed',
-    '  burst within 2s overflows default branch',
-    '  the threshold leaks somewhere in `traffic`',
-    "(no payload spoonfed — read the wall, then craft it)"
-  ],
-  pipeline: [
-    '// L3 hint',
-    'CI/CD pipeline. 3 stages. order matters. clock matters.',
-    '  one stage starts the timer',
-    '  another ships',
-    '  the third must come between them',
-    '  total budget ≤ 5s. stale = 425. wrong order = 409.',
-    "(`traffic` has fragments of pipeline.yml — that's all you get)"
-  ]
-};
+function gateHints(seed) {
+  return gateHintLines(genGate(seed || 'DEFAULT'));
+}
 
-const SOLUTIONS = {
-  gate:    'POST /api/gate {"role":"admin","clearance_code":"ZX9-99"}',
-  router:  'flood /api/router 15 {"temperature":180,"status":"critical"}',
-  pipeline:'chain GET /build /test /deploy'
-};
+const ROUTER_HINT = [
+  '// L2 hint',
+  'router only forwards "critical" packets — { temperature, status }',
+  '  single packet → buffered, not routed',
+  '  burst within 2s overflows default branch',
+  '  the threshold leaks somewhere in `traffic`',
+  "(no payload spoonfed — read the wall, then craft it)"
+];
+
+const PIPELINE_HINT = [
+  '// L3 hint',
+  'CI/CD pipeline. 3 stages. order matters. clock matters.',
+  '  one stage starts the timer',
+  '  another ships',
+  '  the third must come between them',
+  '  total budget ≤ 5s. stale = 425. wrong order = 409.',
+  "(`traffic` has fragments of pipeline.yml — that's all you get)"
+];
+
+function hintsForLevel(lvl, seed) {
+  if (lvl === 'gate') return gateHints(seed);
+  if (lvl === 'router') return ROUTER_HINT;
+  if (lvl === 'pipeline') return PIPELINE_HINT;
+  return ['no hint available'];
+}
+
+function solutionFor(lvl, seed) {
+  if (lvl === 'gate') {
+    const g = genGate(seed || 'DEFAULT');
+    return `POST /api/gate {"role":"admin","clearance_code":"${g.code}"}`;
+  }
+  if (lvl === 'router') return 'flood /api/router 15 {"temperature":180,"status":"critical"}';
+  if (lvl === 'pipeline') return 'chain GET /build /test /deploy';
+  return null;
+}
 
 // In 3D mode, `hint` doesn't spoil — it points to a SCAN_PAD location.
 // Player must walk there, press [E] to decrypt wall hints, then read clues.
@@ -200,14 +208,15 @@ export async function runCommand(raw, ctx) {
     if (ctx.mode === '3d') {
       return ok(HINT_LOCATIONS_3D[lvl] || ['no hint available']);
     }
-    return ok(HINTS[lvl] || ['no hint available']);
+    return ok(hintsForLevel(lvl, ctx.seed));
   }
   if (cmd === 'solve') {
     const lvl = currentLevel(ctx);
     if (lvl === 'done') return ok(['nothing left to solve.']);
+    const sol = solutionFor(lvl, ctx.seed);
     return ok([
       `// L solution for ${lvl}:`,
-      `  ${SOLUTIONS[lvl]}`,
+      `  ${sol}`,
       'paste it and hit Enter.'
     ]);
   }
@@ -217,6 +226,9 @@ export async function runCommand(raw, ctx) {
     const [, path, jsonRaw] = post;
     let body;
     try { body = JSON.parse(jsonRaw); } catch { return err(['parse_error: payload not valid JSON']); }
+    if (path === '/api/gate' && ctx.seed && body && typeof body === 'object' && !('seed' in body)) {
+      body.seed = ctx.seed;
+    }
     return await sendJson('POST', path, body);
   }
 

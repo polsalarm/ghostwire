@@ -1,5 +1,6 @@
 import { redis, playerKey } from '../_kv.js';
 import { readJsonBody, cryptic, methodNotAllowed } from '../_state.js';
+import { isDailySeed } from '../../shared/puzzles/rng.js';
 
 const MIN_TIME_MS = 5_000;        // sub-5s impossible (typewriter alone is longer)
 const MAX_TIME_MS = 60 * 60_000;  // 1h cap
@@ -23,6 +24,7 @@ export default async function handler(req, res) {
     const handle = sanitizeHandle(body?.handle);
     const timeMs = Number(body?.timeMs);
     const hintsUsed = Math.max(0, Math.floor(Number(body?.hintsUsed) || 0));
+    const seed = typeof body?.seed === 'string' ? body.seed : 'DEFAULT';
 
     if (!handle) {
       return res.status(400).json(cryptic('BAD_HANDLE', 'handle must be 2-16 chars [a-z0-9_-]'));
@@ -47,14 +49,25 @@ export default async function handler(req, res) {
       timeMs,
       hintsUsed,
       score: s,
-      ts: now
+      ts: now,
+      seed
     };
 
     await redis.hset(`gw:run:${runId}`, detail);
     await redis.expire(`gw:run:${runId}`, 60 * 60 * 24 * 90);  // 90d retention
     await redis.zadd('gw:lb:alltime', { score: s, member: runId });
-    // cap leaderboard to top 1000 to keep zset cheap
     await redis.zremrangebyrank('gw:lb:alltime', 1000, -1);
+
+    let dailyRank = null;
+    if (isDailySeed(seed)) {
+      const date = seed.slice(2); // strip "d:" prefix
+      const dailyKey = `gw:lb:daily:${date}`;
+      await redis.zadd(dailyKey, { score: s, member: runId });
+      await redis.zremrangebyrank(dailyKey, 1000, -1);
+      await redis.expire(dailyKey, 60 * 60 * 24 * 14); // 14d retention per board
+      const dr = await redis.zrank(dailyKey, runId);
+      dailyRank = typeof dr === 'number' ? dr + 1 : null;
+    }
 
     const rank = await redis.zrank('gw:lb:alltime', runId);
     return res.status(200).json({
@@ -63,8 +76,10 @@ export default async function handler(req, res) {
       handle,
       score: s,
       rank: typeof rank === 'number' ? rank + 1 : null,
+      dailyRank,
       timeMs,
-      hintsUsed
+      hintsUsed,
+      seed
     });
   } catch (e) {
     console.error('run/finish error:', e);

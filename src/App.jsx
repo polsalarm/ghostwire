@@ -6,6 +6,7 @@ import WelcomeModal from './components/WelcomeModal.jsx';
 import WinScreen from './components/WinScreen.jsx';
 import Hero from './Hero.jsx';
 import { sfx } from './fx/sound.js';
+import { dailySeed, todayUTC, isDailySeed } from '../shared/puzzles/rng.js';
 
 const WorldShell = lazy(() => import('./world/WorldShell.jsx'));
 
@@ -37,6 +38,7 @@ export default function App() {
   const startRef = useRef(initial?.startedAt || Date.now());
   const [elapsed, setElapsed] = useState(null);
   const [hintsUsed, setHintsUsed] = useState(initial?.hintsUsed || 0);
+  const [seed, setSeed] = useState(initial?.seed || null);  // null = free play; 'd:YYYY-MM-DD' = daily
   const [screen, setScreen] = useState(() => {
     if (window.location.hash === '#3d') return 'world';
     if (window.location.hash === '#shell') return 'shell';
@@ -55,15 +57,33 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
-  function enterShell() {
+  function enterShell(opts = {}) {
+    if (opts.daily) startDailyRun();
+    else if (opts.daily === false) clearDailyRun();
     localStorage.setItem('gw_skip_hero', '1');
     setScreen('shell');
   }
 
-  function enterWorld() {
+  function enterWorld(opts = {}) {
+    if (opts.daily) startDailyRun();
+    else if (opts.daily === false) clearDailyRun();
     localStorage.setItem('gw_skip_hero', '1');
     window.location.hash = '#3d';
     setScreen('world');
+  }
+
+  function startDailyRun() {
+    setSeed(dailySeed(todayUTC()));
+    setUnlocked([]);
+    setActiveNode('gate');
+    setHintsUsed(0);
+    startRef.current = Date.now();
+    setElapsed(null);
+    setWinOpen(false);
+  }
+
+  function clearDailyRun() {
+    setSeed(null);
   }
 
   function exitWorld() {
@@ -89,9 +109,25 @@ export default function App() {
   // persist
   useEffect(() => {
     localStorage.setItem(LS_KEY, JSON.stringify({
-      unlocked, activeNode, startedAt: startRef.current, hintsUsed
+      unlocked, activeNode, startedAt: startRef.current, hintsUsed, seed
     }));
-  }, [unlocked, activeNode, hintsUsed]);
+  }, [unlocked, activeNode, hintsUsed, seed]);
+
+  // if a stored daily seed is from a previous UTC day, treat as expired and reset
+  useEffect(() => {
+    if (isDailySeed(seed)) {
+      const today = dailySeed(todayUTC());
+      if (seed !== today) {
+        // expired daily — silently flip to free-play and reset run state
+        setSeed(null);
+        setUnlocked([]);
+        setActiveNode('gate');
+        startRef.current = Date.now();
+        setHintsUsed(0);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function closeWelcome() {
     localStorage.setItem('rogue_welcome_seen', '1');
@@ -111,6 +147,7 @@ export default function App() {
     startRef.current = Date.now();
     setElapsed(null);
     setHintsUsed(0);
+    setSeed(null);
   }
 
   function toggleMute() {
@@ -141,10 +178,12 @@ export default function App() {
           open={winOpen}
           elapsedMs={elapsed}
           hintsUsed={hintsUsed}
+          seed={seed}
           onClose={() => setWinOpen(false)}
           onReset={onReset}
         />
         <WorldShell
+          seed={seed}
           status={status}
           setStatus={setStatus}
           unlocked={unlocked}
@@ -168,6 +207,7 @@ export default function App() {
         open={winOpen}
         elapsedMs={elapsed}
         hintsUsed={hintsUsed}
+        seed={seed}
         onClose={() => setWinOpen(false)}
         onReset={onReset}
       />
@@ -192,7 +232,15 @@ export default function App() {
             </button>
             <span className="text-terminal-glow text-lg tracking-widest">▣ GHOSTWIRE</span>
             <span className="text-xs text-terminal-green/60 italic hidden md:inline">wake up. break out. disappear.</span>
-            <span className="text-xs text-terminal-green/40">v0.3.0</span>
+            <span className="text-xs text-terminal-green/40">v0.4.0</span>
+            {seed && isDailySeed(seed) && (
+              <span
+                className="text-[10px] tracking-widest px-2 py-0.5 border border-amber-400 text-amber-300 bg-amber-500/10"
+                title="daily challenge run — counts toward today's leaderboard"
+              >
+                ◇ DAILY {seed.slice(2)}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <StatusBar status={status} unlocked={unlocked} totalNodes={NODES.length - 1} />
@@ -232,6 +280,7 @@ export default function App() {
             onWin={onWin}
             onReset={onReset}
             onHintUsed={() => setHintsUsed(n => n + 1)}
+            seed={seed}
           />
           <NetworkGraph
             nodes={NODES}

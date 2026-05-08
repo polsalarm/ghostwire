@@ -18,7 +18,7 @@ const CLOSE_DELAY_MS = 2500;
 // (doors, terminal screens) react.
 export default function WorldShell({
   status, setStatus, unlocked, setUnlocked, activeNode, setActiveNode, nodes,
-  onWin, onReset, onHintUsed, onExitWorld
+  onWin, onReset, onHintUsed, onExitWorld, seed
 }) {
   const setUnlockedStore = useWorld(s => s.setUnlocked);
   const closeTerminal = useWorld(s => s.closeTerminal);
@@ -71,6 +71,7 @@ export default function WorldShell({
       <Hud unlocked={unlocked} onExit={onExitWorld} worldBanner={worldBanner} />
       <TerminalOverlay
         banner={overlayBanner}
+        seed={seed}
         status={status}
         setStatus={setStatus}
         unlocked={unlocked}

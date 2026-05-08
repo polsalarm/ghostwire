@@ -59,7 +59,7 @@ const HOWTO = [
   { n: '03', title: 'CHAIN ENDPOINTS', body: 'final lock needs three calls in sequence under 5 seconds. miss the window — pipeline resets.' }
 ];
 
-export default function Hero({ onEnter }) {
+export default function Hero({ onEnter, onEnter3D }) {
   const [tag, setTag] = useState(TAGLINE_GLITCH_VARIANTS[0]);
   const [bootIdx, setBootIdx] = useState(0);
   const [booting, setBooting] = useState(false);
@@ -68,6 +68,44 @@ export default function Hero({ onEnter }) {
   const [pointer, setPointer] = useState({ x: 50, y: 50 });
   const [konami, setKonami] = useState([]);
   const [easter, setEaster] = useState(false);
+  const [daily, setDaily] = useState(null);          // { date, resetIn, gate: { prefix, sumTarget } }
+  const [dailyCountdown, setDailyCountdown] = useState('');
+  const [streakCount, setStreakCount] = useState(0);
+  const [dailyMode, setDailyMode] = useState(false); // when true, handleEnter starts a daily run
+
+  // fetch daily config + load streak on mount
+  React.useEffect(() => {
+    let cancelled = false;
+    fetch('/api/daily').then(r => r.json()).then(d => {
+      if (!cancelled && d?.date) setDaily(d);
+    }).catch(() => {});
+    try {
+      const raw = localStorage.getItem('gw_streak_v1');
+      if (raw) {
+        const o = JSON.parse(raw);
+        const today = new Date().toISOString().slice(0, 10);
+        const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+        if (o.lastDate === today || o.lastDate === yesterday) {
+          setStreakCount(Number(o.count) || 0);
+        }
+      }
+    } catch {}
+    return () => { cancelled = true; };
+  }, []);
+
+  // tick countdown clock
+  React.useEffect(() => {
+    if (!daily?.resetIn) return;
+    let s = daily.resetIn;
+    const id = setInterval(() => {
+      s = Math.max(0, s - 1);
+      const hh = String(Math.floor(s / 3600)).padStart(2, '0');
+      const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+      const ss = String(s % 60).padStart(2, '0');
+      setDailyCountdown(`${hh}:${mm}:${ss}`);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [daily?.resetIn]);
 
   // ── tagline glitch loop ─────────────────────────────────────────
   useEffect(() => {
@@ -161,7 +199,17 @@ export default function Hero({ onEnter }) {
   function closeBriefing() {
     localStorage.setItem('rogue_welcome_seen', '1');
     setBriefingOpen(false);
-    setTimeout(() => onEnter?.(), 200);
+    setTimeout(() => onEnter?.({ daily: dailyMode }), 200);
+  }
+
+  function startDailyEnter() {
+    setDailyMode(true);
+    handleEnter();
+  }
+
+  function startFreePlayEnter() {
+    setDailyMode(false);
+    handleEnter();
   }
 
   return (
@@ -281,15 +329,15 @@ export default function Hero({ onEnter }) {
             <span className="text-[#9bffb0]"> all you have is the prompt.</span>
           </p>
 
-          <div className="flex flex-col gap-3 items-start lg:items-end">
+          <div className="flex flex-col gap-3 items-start lg:items-end w-full lg:w-auto">
             <button
-              onClick={handleEnter}
+              onClick={startFreePlayEnter}
               disabled={booting || briefingOpen}
               className="group relative px-8 py-5 text-lg tracking-[0.3em]
                          bg-[#9bffb0]/10 border border-[#9bffb0] text-[#e8ffe8]
                          hover:bg-[#9bffb0]/20 transition-colors
                          shadow-[0_0_30px_rgba(155,255,176,0.25)]
-                         disabled:opacity-60"
+                         disabled:opacity-60 w-full lg:w-auto"
               style={{ fontFamily: 'JetBrains Mono, monospace' }}
             >
               <span className="absolute -top-2 -left-2 w-3 h-3 border-l-2 border-t-2 border-[#ff8a4c]" />
@@ -300,6 +348,33 @@ export default function Hero({ onEnter }) {
             <div className="text-[11px] tracking-[0.3em] text-[#9bffb0]/55">
               press <span className="text-[#ff8a4c]">[ENTER]</span> or <span className="text-[#ff8a4c]">[SPACE]</span> · cold boot, then briefing
             </div>
+
+            {/* daily challenge cta */}
+            {daily && (
+              <button
+                onClick={startDailyEnter}
+                disabled={booting || briefingOpen}
+                className="group relative w-full lg:w-auto px-6 py-3 text-sm tracking-[0.25em]
+                           bg-amber-500/10 border border-amber-400 text-amber-200
+                           hover:bg-amber-500/20 transition-colors
+                           shadow-[0_0_20px_rgba(251,191,36,0.18)]
+                           disabled:opacity-50"
+                style={{ fontFamily: 'JetBrains Mono, monospace' }}
+                title="today's seeded puzzle. counts toward daily leaderboard."
+              >
+                <span className="absolute -top-1.5 -left-1.5 w-2 h-2 border-l border-t border-amber-300" />
+                <span className="absolute -bottom-1.5 -right-1.5 w-2 h-2 border-r border-b border-amber-300" />
+                ◇ PLAY DAILY [ {daily.date} ]
+                {dailyCountdown && (
+                  <span className="ml-2 text-amber-300/70 text-xs tabular-nums">resets in {dailyCountdown}</span>
+                )}
+              </button>
+            )}
+            {streakCount > 0 && (
+              <div className="text-[11px] tracking-[0.25em] text-amber-300/80">
+                🔥 daily streak: {streakCount}
+              </div>
+            )}
 
             {/* live counters */}
             <div className="mt-4 grid grid-cols-2 gap-3 w-full lg:w-auto">

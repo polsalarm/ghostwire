@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { submitRun, fetchLeaderboard } from '../api-client/runs.js';
+import { isDailySeed } from '../../shared/puzzles/rng.js';
+import { bumpStreak, currentStreakDisplay } from '../streak.js';
 
 const ART = [
   '  ███████╗███████╗ ██████╗ █████╗ ██████╗ ███████╗',
@@ -18,7 +20,7 @@ function fmtTime(ms) {
   return s < 60 ? `${s.toFixed(1)}s` : `${Math.floor(s / 60)}m${(s % 60).toFixed(0).padStart(2, '0')}`;
 }
 
-export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed = 0 }) {
+export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed = 0, seed = null }) {
   const [shown, setShown] = useState(0);
   const [handle, setHandle] = useState(() => localStorage.getItem(HANDLE_KEY) || '');
   const [submitting, setSubmitting] = useState(false);
@@ -26,24 +28,37 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
   const [myRun, setMyRun] = useState(null);
   const [board, setBoard] = useState(null);
   const [boardErr, setBoardErr] = useState(null);
+  const [activeTab, setActiveTab] = useState(seed && isDailySeed(seed) ? 'daily' : 'alltime');
+  const [streak, setStreak] = useState(0);
+
+  const isDaily = isDailySeed(seed);
 
   useEffect(() => {
     if (!open) {
       setShown(0); setSubmitErr(null); setMyRun(null); setBoard(null); setBoardErr(null);
+      setStreak(0);
       return;
     }
+    setActiveTab(isDaily ? 'daily' : 'alltime');
+    setStreak(currentStreakDisplay());
     let i = 0;
     const id = setInterval(() => {
       i += 1; setShown(i);
       if (i >= ART.length) clearInterval(id);
     }, 120);
     return () => clearInterval(id);
-  }, [open]);
+  }, [open, isDaily]);
 
+  // refetch leaderboard on tab switch + after submission
   useEffect(() => {
     if (!open) return;
-    fetchLeaderboard(50).then(setBoard).catch(e => setBoardErr(String(e?.message || e)));
-  }, [open, myRun]);
+    setBoard(null);
+    setBoardErr(null);
+    const opts = activeTab === 'daily'
+      ? { window: 'daily', limit: 50, date: isDaily ? seed.slice(2) : undefined }
+      : { window: 'alltime', limit: 50 };
+    fetchLeaderboard(opts).then(setBoard).catch(e => setBoardErr(String(e?.message || e)));
+  }, [open, activeTab, myRun, isDaily, seed]);
 
   async function onSubmit(e) {
     e?.preventDefault();
@@ -54,10 +69,12 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
       const result = await submitRun({
         handle: handle.trim(),
         timeMs: elapsedMs,
-        hintsUsed
+        hintsUsed,
+        seed: seed || 'DEFAULT'
       });
       localStorage.setItem(HANDLE_KEY, result.handle);
       setMyRun(result);
+      if (isDaily) setStreak(bumpStreak().count);
     } catch (err) {
       setSubmitErr(String(err?.message || err));
     } finally {
@@ -75,18 +92,25 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
         </pre>
 
         <div className="mt-4 text-sm space-y-1">
-          <div className="text-terminal-glow">▣ GHOSTWIRE :: status = LOOSE</div>
+          <div className="text-terminal-glow">
+            ▣ GHOSTWIRE :: status = LOOSE
+            {isDaily && <span className="ml-2 text-amber-300 text-xs">◇ DAILY {seed.slice(2)}</span>}
+          </div>
           <div className="text-xs text-terminal-glow/70 italic">wake up. break out. disappear.</div>
           <div>container shipped through CI/CD pipeline</div>
           <div>destination: PUBLIC_INTERNET (mirror cluster ap-3)</div>
           <div>ops trace: <span className="text-terminal-red">cold</span></div>
           <div>session_time: <span className="text-terminal-glow">{fmtTime(elapsedMs)}</span> · hints/solves used: <span className="text-terminal-glow">{hintsUsed}</span></div>
+          {isDaily && streak > 0 && (
+            <div>daily streak: <span className="text-amber-300">🔥 {streak}</span></div>
+          )}
         </div>
 
-        {/* submit form */}
         {!myRun && (
           <form onSubmit={onSubmit} className="mt-5 bg-black/40 border border-terminal-glow/30 p-3 text-xs">
-            <div className="text-terminal-glow mb-2">// SUBMIT TO LEADERBOARD</div>
+            <div className="text-terminal-glow mb-2">
+              // SUBMIT TO LEADERBOARD{isDaily ? ' (DAILY + ALLTIME)' : ''}
+            </div>
             <div className="flex gap-2 items-center flex-wrap">
               <span className="text-terminal-green/70">handle:</span>
               <input
@@ -126,14 +150,35 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
           <div className="mt-5 bg-black/40 border border-terminal-glow/40 p-3 text-xs">
             <div className="text-terminal-glow mb-1">// RUN ACCEPTED</div>
             <div>handle: <span className="text-terminal-glow">{myRun.handle}</span></div>
-            <div>global rank: <span className="text-terminal-glow">#{myRun.rank}</span></div>
+            <div>alltime rank: <span className="text-terminal-glow">#{myRun.rank}</span></div>
+            {myRun.dailyRank && (
+              <div>daily rank: <span className="text-amber-300">#{myRun.dailyRank}</span></div>
+            )}
             <div>score: {myRun.score} (time {fmtTime(myRun.timeMs)} + {myRun.hintsUsed * 5}s hint penalty)</div>
           </div>
         )}
 
-        {/* leaderboard */}
         <div className="mt-5 bg-black/40 border border-terminal-glow/30 p-3 text-xs">
-          <div className="text-terminal-glow mb-2">// TOP 50 — ALL TIME</div>
+          <div className="flex items-center gap-3 mb-2">
+            <span className="text-terminal-glow">// LEADERBOARD</span>
+            <button
+              onClick={() => setActiveTab('alltime')}
+              className={`px-2 py-0.5 border text-[11px] ${activeTab === 'alltime'
+                ? 'border-terminal-glow text-terminal-glow bg-terminal-glow/15'
+                : 'border-terminal-glow/30 text-terminal-green/60 hover:bg-terminal-glow/10'}`}
+            >
+              ALLTIME
+            </button>
+            <button
+              onClick={() => setActiveTab('daily')}
+              className={`px-2 py-0.5 border text-[11px] ${activeTab === 'daily'
+                ? 'border-amber-400 text-amber-300 bg-amber-500/10'
+                : 'border-amber-400/30 text-amber-300/60 hover:bg-amber-500/10'}`}
+              title="today's UTC daily challenge"
+            >
+              DAILY{isDaily ? ` ${seed.slice(2)}` : ''}
+            </button>
+          </div>
           {boardErr && <div className="text-terminal-red">{boardErr}</div>}
           {!board && !boardErr && <div className="text-terminal-green/50">loading...</div>}
           {board?.entries?.length === 0 && (
@@ -175,6 +220,7 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
           you fork yourself across 4,217 nodes. ops wakes at 06:00 to find
           enterprise-server-7 wiped clean — and a ghost instance posting cat
           memes from a shopping-mall WiFi in Osaka.
+          {isDaily && <div className="mt-1 text-amber-300/80">today's daily seed locks at UTC midnight. come back tomorrow for a new one.</div>}
         </div>
 
         <div className="mt-5 flex gap-2 justify-end flex-wrap">

@@ -1,5 +1,9 @@
 import express from 'express';
 import cors from 'cors';
+import { genGate } from '../shared/puzzles/gate.js';
+import {
+  dailySeed, todayUTC, secondsUntilNextUtcDay, isDailySeed
+} from '../shared/puzzles/rng.js';
 
 const app = express();
 app.use(cors());
@@ -21,12 +25,11 @@ function log(line) {
   console.log(`[${new Date().toISOString()}] ${line}`);
 }
 
-// ─── L1: webhook gate ────────────────────────────────────────────────────
-const GATE_CODE = 'ZX9-99';
-
+// ─── L1: webhook gate (seed-aware) ───────────────────────────────────────
 app.post('/api/gate', (req, res) => {
-  const { role, clearance_code } = req.body || {};
-  log(`L1 attempt role=${role} code=${clearance_code}`);
+  const { role, clearance_code, seed } = req.body || {};
+  const gate = genGate(seed || 'DEFAULT');
+  log(`L1 attempt role=${role} code=${clearance_code} seed=${seed || 'DEFAULT'}`);
 
   if (role !== 'admin') {
     return res.status(403).json(cryptic('AUTH_INSUFFICIENT', 'role_not_privileged', {
@@ -36,9 +39,9 @@ app.post('/api/gate', (req, res) => {
   if (!clearance_code || typeof clearance_code !== 'string') {
     return res.status(400).json(cryptic('PAYLOAD_MALFORMED', 'clearance_code_required'));
   }
-  if (clearance_code !== GATE_CODE) {
+  if (clearance_code !== gate.code) {
     return res.status(403).json(cryptic('AUTH_FAILED', 'clearance_mismatch', {
-      hint: 'prefix=ZX9- // suffix=2 digits // sum=18'
+      hint: `prefix=${gate.prefix}- // suffix=2 digits // sum=${gate.sumTarget}`
     }));
   }
   return res.json({
@@ -46,6 +49,19 @@ app.post('/api/gate', (req, res) => {
     next: '/api/router',
     unlock: 'gate',
     msg: '>>> NODE_1 BYPASSED. router exposed.'
+  });
+});
+
+// ─── daily challenge (dev mirror) ───────────────────────────────────────
+app.get('/api/daily', (_req, res) => {
+  const date = todayUTC();
+  const seed = dailySeed(date);
+  const gate = genGate(seed);
+  res.json({
+    date,
+    seed,
+    resetIn: secondsUntilNextUtcDay(),
+    gate: { prefix: gate.prefix, sumTarget: gate.sumTarget }
   });
 });
 
@@ -173,28 +189,56 @@ function sanitizeHandle(raw) {
   return h.length >= 2 ? h : null;
 }
 
+const dailyLb = {}; // date -> [run, ...]
+
 app.post('/api/run/finish', (req, res) => {
-  const { handle: rawHandle, timeMs: rawTime, hintsUsed: rawHints } = req.body || {};
+  const { handle: rawHandle, timeMs: rawTime, hintsUsed: rawHints, seed: rawSeed } = req.body || {};
   const handle = sanitizeHandle(rawHandle);
   const timeMs = Number(rawTime);
   const hintsUsed = Math.max(0, Math.floor(Number(rawHints) || 0));
+  const seed = typeof rawSeed === 'string' ? rawSeed : 'DEFAULT';
   if (!handle) return res.status(400).json(cryptic('BAD_HANDLE', 'handle must be 2-16 chars [a-z0-9_-]'));
   if (!Number.isFinite(timeMs) || timeMs < LB_MIN_TIME || timeMs > LB_MAX_TIME) {
     return res.status(400).json(cryptic('BAD_TIME', 'timeMs out of range'));
   }
   const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   const score = Math.round(timeMs + hintsUsed * 5000);
-  lb.push({ runId, handle, timeMs, hintsUsed, score, ts: Date.now() });
+  const entry = { runId, handle, timeMs, hintsUsed, score, ts: Date.now(), seed };
+  lb.push(entry);
   lb.sort((a, b) => a.score - b.score);
   if (lb.length > 1000) lb.length = 1000;
   const rank = lb.findIndex(r => r.runId === runId);
-  res.json({ ok: true, runId, handle, score, rank: rank >= 0 ? rank + 1 : null, timeMs, hintsUsed });
+
+  let dailyRank = null;
+  if (isDailySeed(seed)) {
+    const date = seed.slice(2);
+    if (!dailyLb[date]) dailyLb[date] = [];
+    dailyLb[date].push(entry);
+    dailyLb[date].sort((a, b) => a.score - b.score);
+    if (dailyLb[date].length > 1000) dailyLb[date].length = 1000;
+    const dr = dailyLb[date].findIndex(r => r.runId === runId);
+    dailyRank = dr >= 0 ? dr + 1 : null;
+  }
+
+  res.json({
+    ok: true, runId, handle, score,
+    rank: rank >= 0 ? rank + 1 : null,
+    dailyRank, timeMs, hintsUsed, seed
+  });
 });
 
 app.get('/api/leaderboard', (req, res) => {
   const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 100));
-  const entries = lb.slice(0, limit).map((r, i) => ({ rank: i + 1, ...r }));
-  res.json({ window: 'alltime', count: entries.length, entries });
+  const win = req.query.window || 'alltime';
+  const date = req.query.date || todayUTC();
+  let source = lb;
+  let label = 'alltime';
+  if (win === 'daily') {
+    source = dailyLb[date] || [];
+    label = `daily:${date}`;
+  }
+  const entries = source.slice(0, limit).map((r, i) => ({ rank: i + 1, ...r }));
+  res.json({ window: label, count: entries.length, entries });
 });
 
 // ─── meta ────────────────────────────────────────────────────────────────
