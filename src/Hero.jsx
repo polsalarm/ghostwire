@@ -96,6 +96,11 @@ export default function Hero({ onEnter, onEnter3D }) {
     return () => { cancelled = true; };
   }, []);
 
+  // M2 hasn't shipped its 3D environment — auto-flip mode if user picks M2 + 3D
+  useEffect(() => {
+    if (moduleChoice === 'm2' && targetMode === 'world') setTargetMode('shell');
+  }, [moduleChoice, targetMode]);
+
   // tick countdown clock
   React.useEffect(() => {
     if (!daily?.resetIn) return;
@@ -210,15 +215,6 @@ export default function Hero({ onEnter, onEnter3D }) {
     }, 200);
   }
 
-  function startDailyEnter() {
-    setDailyMode(true);
-    handleEnter();
-  }
-
-  function startFreePlayEnter() {
-    setDailyMode(false);
-    handleEnter();
-  }
 
   return (
     <div
@@ -337,138 +333,113 @@ export default function Hero({ onEnter, onEnter3D }) {
             <span className="text-[#9bffb0]"> all you have is the prompt.</span>
           </p>
 
-          <div className="flex flex-col gap-3 items-start lg:items-end w-full lg:w-auto">
-            {/* module picker */}
-            <div className="flex gap-1.5 text-[10px] tracking-[0.25em]">
-              {[
-                { id: 'm1', label: 'M1 SERVER_ROOM',  note: 'gate · router · pipeline' },
-                { id: 'm2', label: 'M2 DATACENTER',   note: 'JWT tamper · IDOR (preview)' }
-              ].map(m => {
-                const active = moduleChoice === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    onClick={() => setModuleChoice(m.id)}
-                    disabled={booting || briefingOpen}
-                    title={m.note}
-                    className={`px-2.5 py-1 border transition-colors ${
-                      active
-                        ? 'border-cyan-400 text-cyan-200 bg-cyan-500/15'
-                        : 'border-[#9bffb0]/30 text-[#9bffb0]/60 hover:bg-[#9bffb0]/10'
-                    }`}
-                    style={{ fontFamily: 'JetBrains Mono, monospace' }}
-                  >
-                    {m.label}{m.id === 'm2' ? ' [preview]' : ''}
-                  </button>
-                );
-              })}
-            </div>
-            {/* tier picker */}
-            <div className="flex gap-1.5 text-[10px] tracking-[0.25em]">
-              {[
-                { id: 'story',    label: 'STORY',    note: 'hint-rich' },
-                { id: 'hardened', label: 'HARDENED', note: '60s · no solve · ×0.7' },
-                { id: 'ghost',    label: 'GHOST',    note: '60s · no hints · ×0.4' }
-              ].map(t => {
-                const active = tierChoice === t.id;
-                const danger = t.id !== 'story';
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => setTierChoice(t.id)}
-                    disabled={booting || briefingOpen}
-                    title={t.note}
-                    className={`px-2.5 py-1 border transition-colors ${
-                      active
-                        ? danger
-                          ? 'border-rose-400 text-rose-200 bg-rose-500/20'
-                          : 'border-[#9bffb0] text-[#e8ffe8] bg-[#9bffb0]/15'
-                        : 'border-[#9bffb0]/30 text-[#9bffb0]/60 hover:bg-[#9bffb0]/10'
-                    }`}
-                    style={{ fontFamily: 'JetBrains Mono, monospace' }}
-                  >
-                    {t.label}
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              onClick={startFreePlayEnter}
-              disabled={booting || briefingOpen}
-              className="group relative px-8 py-5 text-lg tracking-[0.3em]
-                         bg-[#9bffb0]/10 border border-[#9bffb0] text-[#e8ffe8]
-                         hover:bg-[#9bffb0]/20 transition-colors
-                         shadow-[0_0_30px_rgba(155,255,176,0.25)]
-                         disabled:opacity-60 w-full lg:w-auto"
+          <div className="w-full lg:w-[420px] shrink-0">
+            <div
+              className="bg-[#070b10]/80 border border-[#9bffb0]/30 p-5 lg:p-6 backdrop-blur-sm
+                         shadow-[0_0_40px_rgba(34,197,94,0.08)] relative"
               style={{ fontFamily: 'JetBrains Mono, monospace' }}
             >
               <span className="absolute -top-2 -left-2 w-3 h-3 border-l-2 border-t-2 border-[#ff8a4c]" />
               <span className="absolute -bottom-2 -right-2 w-3 h-3 border-r-2 border-b-2 border-[#ff8a4c]" />
-              [ {booting ? 'BOOTING…' : briefingOpen ? 'AWAITING BRIEFING…' : 'ENTER THE SHELL'} ]
-              <span className="ml-3 inline-block w-2 h-5 align-middle bg-[#9bffb0] animate-pulse" />
-            </button>
-            <div className="text-[11px] tracking-[0.3em] text-[#9bffb0]/55">
-              press <span className="text-[#ff8a4c]">[ENTER]</span> or <span className="text-[#ff8a4c]">[SPACE]</span> · cold boot, then briefing
-            </div>
 
-            {/* mode picker — 2D terminal vs walkable 3D escape room */}
-            <div className="flex gap-1.5 text-[10px] tracking-[0.25em] mt-1">
-              {[
-                { id: 'shell', label: '◧ TERMINAL', note: 'pure prompt — fast' },
-                { id: 'world', label: '◉ 3D ROOM',  note: 'walkable escape room — atmospheric' }
-              ].map(m => {
-                const active = targetMode === m.id;
-                const accent = m.id === 'world';
-                return (
-                  <button
-                    key={m.id}
-                    onClick={() => setTargetMode(m.id)}
-                    disabled={booting || briefingOpen}
-                    title={m.note}
-                    className={`px-2.5 py-1 border transition-colors ${
-                      active
-                        ? accent
-                          ? 'border-fuchsia-400 text-fuchsia-200 bg-fuchsia-500/15'
-                          : 'border-[#9bffb0] text-[#e8ffe8] bg-[#9bffb0]/15'
-                        : 'border-[#9bffb0]/30 text-[#9bffb0]/60 hover:bg-[#9bffb0]/10'
-                    }`}
-                    style={{ fontFamily: 'JetBrains Mono, monospace' }}
-                  >
-                    {m.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* daily challenge cta */}
-            {daily && (
-              <button
-                onClick={startDailyEnter}
-                disabled={booting || briefingOpen}
-                className="group relative w-full lg:w-auto px-6 py-3 text-sm tracking-[0.25em]
-                           bg-amber-500/10 border border-amber-400 text-amber-200
-                           hover:bg-amber-500/20 transition-colors
-                           shadow-[0_0_20px_rgba(251,191,36,0.18)]
-                           disabled:opacity-50"
-                style={{ fontFamily: 'JetBrains Mono, monospace' }}
-                title="today's seeded puzzle. counts toward daily leaderboard."
-              >
-                <span className="absolute -top-1.5 -left-1.5 w-2 h-2 border-l border-t border-amber-300" />
-                <span className="absolute -bottom-1.5 -right-1.5 w-2 h-2 border-r border-b border-amber-300" />
-                ◇ PLAY DAILY [ {daily.date} ]
-                {dailyCountdown && (
-                  <span className="ml-2 text-amber-300/70 text-xs tabular-nums">resets in {dailyCountdown}</span>
-                )}
-              </button>
-            )}
-            {streakCount > 0 && (
-              <div className="text-[11px] tracking-[0.25em] text-amber-300/80">
-                🔥 daily streak: {streakCount}
+              <div className="text-[10px] tracking-[0.4em] text-[#9bffb0]/50 mb-4">
+                // CONFIGURE RUN
               </div>
-            )}
+
+              <Section label="01 · MODULE">
+                <Choice
+                  options={[
+                    { id: 'm1', label: 'M1 SERVER_ROOM', accent: 'cyan' },
+                    { id: 'm2', label: 'M2 DATACENTER',  accent: 'cyan', tag: 'preview' }
+                  ]}
+                  value={moduleChoice}
+                  onPick={setModuleChoice}
+                  disabled={booting || briefingOpen}
+                />
+              </Section>
+
+              <Section label="02 · MODE">
+                <Choice
+                  options={[
+                    { id: 'shell', label: '◧ TERMINAL', accent: 'green', note: 'pure prompt' },
+                    {
+                      id: 'world', label: '◉ 3D ROOM', accent: 'fuchsia',
+                      note: 'walkable',
+                      disabled: moduleChoice === 'm2'
+                    }
+                  ]}
+                  value={targetMode}
+                  onPick={setTargetMode}
+                  disabled={booting || briefingOpen}
+                />
+              </Section>
+
+              <Section label="03 · TIER">
+                <Choice
+                  options={[
+                    { id: 'story',    label: 'STORY',    accent: 'green', note: 'hint-rich · ×1.0' },
+                    { id: 'hardened', label: 'HARDENED', accent: 'rose',  note: '60s · ×0.7' },
+                    { id: 'ghost',    label: 'GHOST',    accent: 'fuchsia', note: '60s · no hints · ×0.4' }
+                  ]}
+                  value={tierChoice}
+                  onPick={setTierChoice}
+                  disabled={booting || briefingOpen}
+                />
+              </Section>
+
+              <Section label="04 · DAILY CHALLENGE" hideLabel={!daily}>
+                {daily ? (
+                  <button
+                    onClick={() => setDailyMode(d => !d)}
+                    disabled={booting || briefingOpen}
+                    className={`w-full flex items-center justify-between px-3 py-2 border text-[11px] tracking-[0.2em] transition-colors ${
+                      dailyMode
+                        ? 'border-amber-400 text-amber-200 bg-amber-500/15 shadow-[0_0_15px_rgba(251,191,36,0.15)]'
+                        : 'border-[#9bffb0]/30 text-[#9bffb0]/55 hover:bg-amber-500/10 hover:border-amber-400/50'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className={`w-3 h-3 border ${dailyMode ? 'border-amber-300 bg-amber-300' : 'border-[#9bffb0]/50'}`} />
+                      ◇ PLAY DAILY [{daily.date}]
+                    </span>
+                    {dailyCountdown && (
+                      <span className="text-[10px] text-amber-300/70 tabular-nums">resets {dailyCountdown}</span>
+                    )}
+                  </button>
+                ) : (
+                  <div className="text-[10px] text-[#9bffb0]/30">daily feed offline</div>
+                )}
+              </Section>
+
+              {/* primary CTA */}
+              <button
+                onClick={handleEnter}
+                disabled={booting || briefingOpen}
+                className="group relative w-full mt-2 px-6 py-4 text-base tracking-[0.3em]
+                           bg-[#9bffb0]/10 border border-[#9bffb0] text-[#e8ffe8]
+                           hover:bg-[#9bffb0]/20 transition-colors
+                           shadow-[0_0_30px_rgba(155,255,176,0.25)]
+                           disabled:opacity-60"
+              >
+                <span className="absolute -top-1.5 -left-1.5 w-2 h-2 border-l border-t border-[#ff8a4c]" />
+                <span className="absolute -bottom-1.5 -right-1.5 w-2 h-2 border-r border-b border-[#ff8a4c]" />
+                [ {booting ? 'BOOTING…' : briefingOpen ? 'AWAITING BRIEFING…' : 'ENTER'} ]
+                <span className="ml-2 inline-block w-2 h-4 align-middle bg-[#9bffb0] animate-pulse" />
+              </button>
+
+              <div className="mt-2 text-[10px] tracking-[0.25em] text-[#9bffb0]/45 text-center">
+                press <span className="text-[#ff8a4c]">[ENTER]</span> · cold boot then briefing
+              </div>
+
+              {streakCount > 0 && (
+                <div className="mt-3 text-[10px] tracking-[0.25em] text-amber-300/80 text-center">
+                  🔥 daily streak: {streakCount}
+                </div>
+              )}
+            </div>
 
             {/* live counters */}
-            <div className="mt-4 grid grid-cols-2 gap-3 w-full lg:w-auto">
+            <div className="mt-4 grid grid-cols-2 gap-3">
               <Stat label="agents booted" value={count.sessions.toLocaleString()} />
               <Stat label="who escaped" value={count.breakers.toLocaleString()} accent />
             </div>
@@ -631,6 +602,58 @@ export default function Hero({ onEnter, onEnter3D }) {
         @keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
+    </div>
+  );
+}
+
+function Section({ label, hideLabel, children }) {
+  return (
+    <div className="mb-4">
+      {!hideLabel && (
+        <div className="text-[9px] tracking-[0.4em] text-[#9bffb0]/45 mb-1.5">{label}</div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+const ACCENT_CLASSES = {
+  green:   'border-[#9bffb0] text-[#e8ffe8] bg-[#9bffb0]/15',
+  cyan:    'border-cyan-400 text-cyan-200 bg-cyan-500/15',
+  rose:    'border-rose-400 text-rose-200 bg-rose-500/20',
+  fuchsia: 'border-fuchsia-400 text-fuchsia-200 bg-fuchsia-500/15'
+};
+
+function Choice({ options, value, onPick, disabled }) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+      {options.map(o => {
+        const active = value === o.id;
+        const dis = disabled || o.disabled;
+        const accentClass = ACCENT_CLASSES[o.accent] || ACCENT_CLASSES.green;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            onClick={() => !dis && onPick(o.id)}
+            disabled={dis}
+            title={o.note}
+            className={`relative px-2 py-1.5 border text-[10px] tracking-[0.18em] transition-colors text-center ${
+              active ? accentClass
+                     : 'border-[#9bffb0]/25 text-[#9bffb0]/55 hover:bg-[#9bffb0]/10 hover:border-[#9bffb0]/40'
+            } ${dis ? 'opacity-30 cursor-not-allowed hover:bg-transparent' : ''}`}
+            style={{ fontFamily: 'JetBrains Mono, monospace' }}
+          >
+            {o.label}
+            {o.tag && (
+              <span className="ml-1 text-[8px] tracking-widest text-[#ff8a4c]/80">[{o.tag}]</span>
+            )}
+            {o.note && active && (
+              <span className="block text-[8px] tracking-[0.15em] opacity-70 mt-0.5">{o.note}</span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
