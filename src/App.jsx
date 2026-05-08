@@ -70,25 +70,24 @@ export default function App() {
   }, []);
 
   function enterShell(opts = {}) {
-    if (opts.tier) setTier(opts.tier);
-    if (opts.daily) startDailyRun(opts.tier || 'story');
-    else if (opts.daily === false) clearDailyRun();
+    startFreshRun(opts);
     localStorage.setItem('gw_skip_hero', '1');
     setScreen('shell');
   }
 
   function enterWorld(opts = {}) {
-    if (opts.tier) setTier(opts.tier);
-    if (opts.daily) startDailyRun(opts.tier || 'story');
-    else if (opts.daily === false) clearDailyRun();
+    startFreshRun(opts);
     localStorage.setItem('gw_skip_hero', '1');
     window.location.hash = '#3d';
     setScreen('world');
   }
 
-  function startDailyRun(tierId = 'story') {
-    setSeed(dailySeed(todayUTC()));
-    setTier(tierId);
+  // Hero always launches a fresh run. Resets timer, unlocks, hints — so
+  // a HARDENED/GHOST tier gets a real 60s budget instead of inheriting
+  // an ancient startedAt from a previous session.
+  function startFreshRun(opts = {}) {
+    setTier(opts.tier || 'story');
+    setSeed(opts.daily ? dailySeed(todayUTC()) : null);
     setUnlocked([]);
     setActiveNode('gate');
     setHintsUsed(0);
@@ -96,10 +95,6 @@ export default function App() {
     setElapsed(null);
     setWinOpen(false);
     setExpiredOpen(false);
-  }
-
-  function clearDailyRun() {
-    setSeed(null);
   }
 
   function dismissExpired() {
@@ -155,17 +150,23 @@ export default function App() {
   }, [tier, screen, winOpen, expiredOpen]);
 
   // if a stored daily seed is from a previous UTC day, treat as expired and reset
+  // also: if loaded with a timer-tier whose budget already elapsed, drop to story
   useEffect(() => {
     if (isDailySeed(seed)) {
       const today = dailySeed(todayUTC());
       if (seed !== today) {
-        // expired daily — silently flip to free-play and reset run state
         setSeed(null);
         setUnlocked([]);
         setActiveNode('gate');
         startRef.current = Date.now();
         setHintsUsed(0);
       }
+    }
+    const cfg = tierOrDefault(tier);
+    if (cfg.timerMs && Date.now() - startRef.current > cfg.timerMs) {
+      // session was idle past the timer budget — drop to story rather than
+      // expiring the user the moment they reopen the tab
+      setTier('story');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
