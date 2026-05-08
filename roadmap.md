@@ -50,11 +50,11 @@ Live: https://cursor-ghostwire-delta.vercel.app/
 - [x] sfx: footsteps (cadence-gated), scan whir, door rumble, interact ping, disconnect blip
 - [x] HUD: top-left run state, top-right exit, bottom-center prompts, scanline overlay
 - [x] In-shell "◉ 3D MODE" button + `#3d` URL hash + hashchange listener
-- [ ] Real CRT shader pass (`@react-three/postprocessing` — currently HUD overlay only)
+- [x] Real CRT shader pass via `@react-three/postprocessing` (Bloom + ChromaticAberration + Scanline + Noise + Vignette)
+- [x] Hero page TERMINAL / 3D ROOM toggle
+- [x] Win sequence as 3D camera fly-through to exit (6 waypoints, ~5.4s, then modal)
 - [ ] Modeled GLB assets (replace box geometry: chair, monitor, server racks, cables)
 - [ ] Audio: positional 3D audio (drei `<PositionalAudio>` per terminal)
-- [ ] Hero page "ENTER 3D" button (currently only via shell button or URL)
-- [ ] Win sequence as 3D camera fly-through to exit (still modal)
 - [ ] Auto-quality: drop shadows / pixel-ratio when fps falls below 30
 - [ ] Reset clears `revealedChambers` zustand state on game reset
 
@@ -86,7 +86,7 @@ Live: https://cursor-ghostwire-delta.vercel.app/
 - [x] Streak counter (localStorage v1) — bumped on daily-mode submission
 - [x] Header chip "◇ DAILY YYYY-MM-DD" when in daily mode
 - [x] Stale-day auto-reset: opening with old daily seed flips to free-play
-- [ ] Weekly leaderboard tab
+- [x] Weekly leaderboard tab (Mon-anchored, 21d retention) + tier filter chips
 - [ ] Server-side streak tracking (currently client-only)
 
 ### 2c — Difficulty tiers ✅
