@@ -114,20 +114,23 @@ Live: https://cursor-ghostwire-delta.vercel.app/
 
 ---
 
-## Phase 3 — Module 2 (DATACENTER)
+## Phase 3 — Module 2 (DATACENTER) ⚙️ in progress (v1 shipped)
 
 > *Goal: new content. New puzzles, new environment, module-select UI.*
 
-- [ ] Module-select screen — list M1, M2 with progress
-- [ ] M2 puzzle: JWT tampering (decode → modify role → re-sign with leaked secret)
-- [ ] M2 puzzle: IDOR (predict / iterate user IDs)
+- [x] `shared/modules/registry.js` — module table (m1 live, m2 preview)
+- [x] Hero module-picker buttons (M1 / M2 [preview])
+- [x] M2 puzzle: JWT tampering (HS256 + leaked secret + role=admin claim)
+- [x] M2 puzzle: IDOR (GET /api/m2/user?id=NNN, magic id → flag)
+- [x] Per-module run-hash field, sanitized server-side
+- [x] App + Terminal + WorldShell propagate module through engine ctx
+- [x] Module-aware traffic + hints + solutions
 - [ ] M2 puzzle: rate-limit bypass (header rotation, IP spoof)
 - [ ] M2 puzzle: prototype pollution (JSON body trick)
 - [ ] M2 puzzle: header smuggling (CL.TE / TE.CL)
-- [ ] M2 3D environment (datacenter chambers, props, lighting)
+- [ ] M2 3D environment (datacenter chambers, props, lighting) — currently terminal-only
 - [ ] M2 module-specific lore / briefing
-- [ ] Per-module progress tracking in localStorage + server
-- [ ] M2 added to module-select screen
+- [ ] Per-module leaderboard filter (currently single board, module field stored)
 
 ---
 
