@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { submitRun, fetchLeaderboard } from '../api-client/runs.js';
 import { isDailySeed } from '../../shared/puzzles/rng.js';
+import { tierOrDefault } from '../../shared/puzzles/tier.js';
 import { bumpStreak, currentStreakDisplay } from '../streak.js';
 
 const ART = [
@@ -20,7 +21,8 @@ function fmtTime(ms) {
   return s < 60 ? `${s.toFixed(1)}s` : `${Math.floor(s / 60)}m${(s % 60).toFixed(0).padStart(2, '0')}`;
 }
 
-export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed = 0, seed = null }) {
+export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed = 0, seed = null, tier = 'story' }) {
+  const tierCfg = tierOrDefault(tier);
   const [shown, setShown] = useState(0);
   const [handle, setHandle] = useState(() => localStorage.getItem(HANDLE_KEY) || '');
   const [submitting, setSubmitting] = useState(false);
@@ -70,7 +72,8 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
         handle: handle.trim(),
         timeMs: elapsedMs,
         hintsUsed,
-        seed: seed || 'DEFAULT'
+        seed: seed || 'DEFAULT',
+        tier
       });
       localStorage.setItem(HANDLE_KEY, result.handle);
       setMyRun(result);
@@ -95,6 +98,11 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
           <div className="text-terminal-glow">
             ▣ GHOSTWIRE :: status = LOOSE
             {isDaily && <span className="ml-2 text-amber-300 text-xs">◇ DAILY {seed.slice(2)}</span>}
+            {tier !== 'story' && (
+              <span className={`ml-2 text-xs ${tier === 'ghost' ? 'text-fuchsia-300' : 'text-rose-300'}`}>
+                ▲ {tierCfg.label} ×{tierCfg.mul}
+              </span>
+            )}
           </div>
           <div className="text-xs text-terminal-glow/70 italic">wake up. break out. disappear.</div>
           <div>container shipped through CI/CD pipeline</div>
@@ -199,10 +207,15 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
                 <tbody>
                   {board.entries.map((e) => {
                     const me = myRun && e.runId === myRun.runId;
+                    const tBadge = e.tier === 'ghost' ? '◆' : e.tier === 'hardened' ? '▲' : '';
+                    const tColor = e.tier === 'ghost' ? 'text-fuchsia-300' : e.tier === 'hardened' ? 'text-rose-300' : '';
                     return (
                       <tr key={e.runId} className={me ? 'text-terminal-glow bg-terminal-glow/10' : 'text-terminal-green'}>
                         <td>{e.rank}</td>
-                        <td className="truncate">{e.handle}{me ? ' ←' : ''}</td>
+                        <td className="truncate">
+                          {tBadge && <span className={`mr-1 ${tColor}`}>{tBadge}</span>}
+                          {e.handle}{me ? ' ←' : ''}
+                        </td>
                         <td className="text-right">{fmtTime(e.timeMs)}</td>
                         <td className="text-right">{e.hintsUsed}</td>
                         <td className="text-right">{e.score}</td>

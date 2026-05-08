@@ -1,8 +1,8 @@
-export async function submitRun({ handle, timeMs, hintsUsed, seed }) {
+export async function submitRun({ handle, timeMs, hintsUsed, seed, tier }) {
   const r = await fetch('/api/run/finish', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ handle, timeMs, hintsUsed, seed })
+    body: JSON.stringify({ handle, timeMs, hintsUsed, seed, tier })
   });
   const data = await r.json().catch(() => null);
   if (!r.ok) throw new Error(data?.error || `submit_failed_${r.status}`);

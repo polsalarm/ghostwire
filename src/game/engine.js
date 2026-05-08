@@ -3,6 +3,7 @@
 import { genGate, gateHintLines } from '../../shared/puzzles/gate.js';
 import { genRouter, routerHintLines } from '../../shared/puzzles/router.js';
 import { genPipeline, pipelineHintLines } from '../../shared/puzzles/pipeline.js';
+import { tierOrDefault } from '../../shared/puzzles/tier.js';
 
 const HELP_BASE = [
   'commands:',
@@ -187,10 +188,19 @@ export async function runCommand(raw, ctx) {
     return `  ${mark} L${n.level}  [${tag}]  ${n.id.padEnd(10)}  ${n.label}`;
   }));
 
+  const tierCfg = tierOrDefault(ctx.tier);
+
   if (cmd === 'hint') {
     const lvl = currentLevel(ctx);
     if (lvl === 'done') return ok(['all nodes bypassed. you escaped already.']);
-    if (ctx.mode === '3d') {
+    if (tierCfg.hint === 'none') {
+      return err([
+        '// hint subsystem offline (TIER_GHOST)',
+        'no clues. no leaks. no second chances.',
+        'cross-reference what the server LEAKS in error responses.'
+      ]);
+    }
+    if (ctx.mode === '3d' || tierCfg.hint === 'location') {
       return ok(HINT_LOCATIONS_3D[lvl] || ['no hint available']);
     }
     return ok(hintsForLevel(lvl, ctx.seed));
@@ -198,6 +208,12 @@ export async function runCommand(raw, ctx) {
   if (cmd === 'solve') {
     const lvl = currentLevel(ctx);
     if (lvl === 'done') return ok(['nothing left to solve.']);
+    if (!tierCfg.solve) {
+      return err([
+        `// solve disabled in tier=${tierCfg.label}`,
+        'no spoilers in hardened/ghost runs. read the leaks. craft the payload.'
+      ]);
+    }
     const sol = solutionFor(lvl, ctx.seed);
     return ok([
       `// L solution for ${lvl}:`,

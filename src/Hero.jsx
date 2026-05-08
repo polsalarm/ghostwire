@@ -72,6 +72,7 @@ export default function Hero({ onEnter, onEnter3D }) {
   const [dailyCountdown, setDailyCountdown] = useState('');
   const [streakCount, setStreakCount] = useState(0);
   const [dailyMode, setDailyMode] = useState(false); // when true, handleEnter starts a daily run
+  const [tierChoice, setTierChoice] = useState('story'); // story | hardened | ghost
 
   // fetch daily config + load streak on mount
   React.useEffect(() => {
@@ -199,7 +200,7 @@ export default function Hero({ onEnter, onEnter3D }) {
   function closeBriefing() {
     localStorage.setItem('rogue_welcome_seen', '1');
     setBriefingOpen(false);
-    setTimeout(() => onEnter?.({ daily: dailyMode }), 200);
+    setTimeout(() => onEnter?.({ daily: dailyMode, tier: tierChoice }), 200);
   }
 
   function startDailyEnter() {
@@ -330,6 +331,35 @@ export default function Hero({ onEnter, onEnter3D }) {
           </p>
 
           <div className="flex flex-col gap-3 items-start lg:items-end w-full lg:w-auto">
+            {/* tier picker */}
+            <div className="flex gap-1.5 text-[10px] tracking-[0.25em]">
+              {[
+                { id: 'story',    label: 'STORY',    note: 'hint-rich' },
+                { id: 'hardened', label: 'HARDENED', note: '60s · no solve · ×0.7' },
+                { id: 'ghost',    label: 'GHOST',    note: '60s · no hints · ×0.4' }
+              ].map(t => {
+                const active = tierChoice === t.id;
+                const danger = t.id !== 'story';
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => setTierChoice(t.id)}
+                    disabled={booting || briefingOpen}
+                    title={t.note}
+                    className={`px-2.5 py-1 border transition-colors ${
+                      active
+                        ? danger
+                          ? 'border-rose-400 text-rose-200 bg-rose-500/20'
+                          : 'border-[#9bffb0] text-[#e8ffe8] bg-[#9bffb0]/15'
+                        : 'border-[#9bffb0]/30 text-[#9bffb0]/60 hover:bg-[#9bffb0]/10'
+                    }`}
+                    style={{ fontFamily: 'JetBrains Mono, monospace' }}
+                  >
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
             <button
               onClick={startFreePlayEnter}
               disabled={booting || briefingOpen}

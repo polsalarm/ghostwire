@@ -6,6 +6,7 @@ import { genPipeline } from '../shared/puzzles/pipeline.js';
 import {
   dailySeed, todayUTC, secondsUntilNextUtcDay, isDailySeed
 } from '../shared/puzzles/rng.js';
+import { tierOrDefault } from '../shared/puzzles/tier.js';
 
 const app = express();
 app.use(cors());
@@ -188,18 +189,20 @@ function sanitizeHandle(raw) {
 const dailyLb = {}; // date -> [run, ...]
 
 app.post('/api/run/finish', (req, res) => {
-  const { handle: rawHandle, timeMs: rawTime, hintsUsed: rawHints, seed: rawSeed } = req.body || {};
+  const { handle: rawHandle, timeMs: rawTime, hintsUsed: rawHints, seed: rawSeed, tier: rawTier } = req.body || {};
   const handle = sanitizeHandle(rawHandle);
   const timeMs = Number(rawTime);
   const hintsUsed = Math.max(0, Math.floor(Number(rawHints) || 0));
   const seed = typeof rawSeed === 'string' ? rawSeed : 'DEFAULT';
+  const tier = tierOrDefault(rawTier).id;
   if (!handle) return res.status(400).json(cryptic('BAD_HANDLE', 'handle must be 2-16 chars [a-z0-9_-]'));
   if (!Number.isFinite(timeMs) || timeMs < LB_MIN_TIME || timeMs > LB_MAX_TIME) {
     return res.status(400).json(cryptic('BAD_TIME', 'timeMs out of range'));
   }
   const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-  const score = Math.round(timeMs + hintsUsed * 5000);
-  const entry = { runId, handle, timeMs, hintsUsed, score, ts: Date.now(), seed };
+  const mul = tierOrDefault(tier).mul;
+  const score = Math.round((timeMs + hintsUsed * 5000) * mul);
+  const entry = { runId, handle, timeMs, hintsUsed, score, ts: Date.now(), seed, tier };
   lb.push(entry);
   lb.sort((a, b) => a.score - b.score);
   if (lb.length > 1000) lb.length = 1000;
@@ -219,7 +222,7 @@ app.post('/api/run/finish', (req, res) => {
   res.json({
     ok: true, runId, handle, score,
     rank: rank >= 0 ? rank + 1 : null,
-    dailyRank, timeMs, hintsUsed, seed
+    dailyRank, timeMs, hintsUsed, seed, tier
   });
 });
 

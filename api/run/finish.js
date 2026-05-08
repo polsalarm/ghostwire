@@ -1,6 +1,7 @@
 import { redis, playerKey } from '../_kv.js';
 import { readJsonBody, cryptic, methodNotAllowed } from '../_state.js';
 import { isDailySeed } from '../../shared/puzzles/rng.js';
+import { tierOrDefault } from '../../shared/puzzles/tier.js';
 
 const MIN_TIME_MS = 5_000;        // sub-5s impossible (typewriter alone is longer)
 const MAX_TIME_MS = 60 * 60_000;  // 1h cap
@@ -13,8 +14,9 @@ function sanitizeHandle(raw) {
   return h.length >= 2 ? h : null;
 }
 
-function score(timeMs, hintsUsed) {
-  return Math.round(timeMs + hintsUsed * 5_000);
+function score(timeMs, hintsUsed, tier) {
+  const t = tierOrDefault(tier);
+  return Math.round((timeMs + hintsUsed * 5_000) * t.mul);
 }
 
 export default async function handler(req, res) {
@@ -25,6 +27,7 @@ export default async function handler(req, res) {
     const timeMs = Number(body?.timeMs);
     const hintsUsed = Math.max(0, Math.floor(Number(body?.hintsUsed) || 0));
     const seed = typeof body?.seed === 'string' ? body.seed : 'DEFAULT';
+    const tier = tierOrDefault(body?.tier).id;
 
     if (!handle) {
       return res.status(400).json(cryptic('BAD_HANDLE', 'handle must be 2-16 chars [a-z0-9_-]'));
@@ -41,7 +44,7 @@ export default async function handler(req, res) {
     }
 
     const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-    const s = score(timeMs, hintsUsed);
+    const s = score(timeMs, hintsUsed, tier);
     const now = Date.now();
 
     const detail = {
@@ -50,7 +53,8 @@ export default async function handler(req, res) {
       hintsUsed,
       score: s,
       ts: now,
-      seed
+      seed,
+      tier
     };
 
     await redis.hset(`gw:run:${runId}`, detail);
@@ -79,7 +83,8 @@ export default async function handler(req, res) {
       dailyRank,
       timeMs,
       hintsUsed,
-      seed
+      seed,
+      tier
     });
   } catch (e) {
     console.error('run/finish error:', e);

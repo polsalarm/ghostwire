@@ -7,6 +7,7 @@ import WinScreen from './components/WinScreen.jsx';
 import Hero from './Hero.jsx';
 import { sfx } from './fx/sound.js';
 import { dailySeed, todayUTC, isDailySeed } from '../shared/puzzles/rng.js';
+import { TIERS, tierOrDefault } from '../shared/puzzles/tier.js';
 
 const WorldShell = lazy(() => import('./world/WorldShell.jsx'));
 
@@ -27,6 +28,14 @@ function loadProgress() {
   } catch { return null; }
 }
 
+function fmtMs(ms) {
+  if (ms == null) return '—';
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  const mm = Math.floor(s / 60);
+  const ss = s % 60;
+  return `${mm}:${String(ss).padStart(2, '0')}`;
+}
+
 export default function App() {
   const [status, setStatus] = useState('idle');
   const initial = loadProgress();
@@ -39,6 +48,9 @@ export default function App() {
   const [elapsed, setElapsed] = useState(null);
   const [hintsUsed, setHintsUsed] = useState(initial?.hintsUsed || 0);
   const [seed, setSeed] = useState(initial?.seed || null);  // null = free play; 'd:YYYY-MM-DD' = daily
+  const [tier, setTier] = useState(initial?.tier || 'story');
+  const [timerLeft, setTimerLeft] = useState(null); // ms remaining in tier timer; null = no timer
+  const [expiredOpen, setExpiredOpen] = useState(false);
   const [screen, setScreen] = useState(() => {
     if (window.location.hash === '#3d') return 'world';
     if (window.location.hash === '#shell') return 'shell';
@@ -58,32 +70,41 @@ export default function App() {
   }, []);
 
   function enterShell(opts = {}) {
-    if (opts.daily) startDailyRun();
+    if (opts.tier) setTier(opts.tier);
+    if (opts.daily) startDailyRun(opts.tier || 'story');
     else if (opts.daily === false) clearDailyRun();
     localStorage.setItem('gw_skip_hero', '1');
     setScreen('shell');
   }
 
   function enterWorld(opts = {}) {
-    if (opts.daily) startDailyRun();
+    if (opts.tier) setTier(opts.tier);
+    if (opts.daily) startDailyRun(opts.tier || 'story');
     else if (opts.daily === false) clearDailyRun();
     localStorage.setItem('gw_skip_hero', '1');
     window.location.hash = '#3d';
     setScreen('world');
   }
 
-  function startDailyRun() {
+  function startDailyRun(tierId = 'story') {
     setSeed(dailySeed(todayUTC()));
+    setTier(tierId);
     setUnlocked([]);
     setActiveNode('gate');
     setHintsUsed(0);
     startRef.current = Date.now();
     setElapsed(null);
     setWinOpen(false);
+    setExpiredOpen(false);
   }
 
   function clearDailyRun() {
     setSeed(null);
+  }
+
+  function dismissExpired() {
+    setExpiredOpen(false);
+    onReset();
   }
 
   function exitWorld() {
@@ -109,9 +130,29 @@ export default function App() {
   // persist
   useEffect(() => {
     localStorage.setItem(LS_KEY, JSON.stringify({
-      unlocked, activeNode, startedAt: startRef.current, hintsUsed, seed
+      unlocked, activeNode, startedAt: startRef.current, hintsUsed, seed, tier
     }));
-  }, [unlocked, activeNode, hintsUsed, seed]);
+  }, [unlocked, activeNode, hintsUsed, seed, tier]);
+
+  // tier timer — only ticks while playing (screen=shell|world) and run not won
+  useEffect(() => {
+    const cfg = tierOrDefault(tier);
+    if (!cfg.timerMs || screen === 'hero' || winOpen || expiredOpen) {
+      setTimerLeft(null);
+      return;
+    }
+    const tick = () => {
+      const elapsed = Date.now() - startRef.current;
+      const left = Math.max(0, cfg.timerMs - elapsed);
+      setTimerLeft(left);
+      if (left <= 0) {
+        setExpiredOpen(true);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 250);
+    return () => clearInterval(id);
+  }, [tier, screen, winOpen, expiredOpen]);
 
   // if a stored daily seed is from a previous UTC day, treat as expired and reset
   useEffect(() => {
@@ -148,6 +189,8 @@ export default function App() {
     setElapsed(null);
     setHintsUsed(0);
     setSeed(null);
+    setTier('story');
+    setExpiredOpen(false);
   }
 
   function toggleMute() {
@@ -174,16 +217,19 @@ export default function App() {
         }
       >
         <WelcomeModal open={welcomeOpen} onClose={closeWelcome} unlocked={unlocked} />
+        <ExpiredModal open={expiredOpen} tier={tier} onDismiss={dismissExpired} />
         <WinScreen
           open={winOpen}
           elapsedMs={elapsed}
           hintsUsed={hintsUsed}
           seed={seed}
+          tier={tier}
           onClose={() => setWinOpen(false)}
           onReset={onReset}
         />
         <WorldShell
           seed={seed}
+          tier={tier}
           status={status}
           setStatus={setStatus}
           unlocked={unlocked}
@@ -203,6 +249,7 @@ export default function App() {
   return (
     <div className="crt h-full w-full bg-terminal-bg text-terminal-green">
       <WelcomeModal open={welcomeOpen} onClose={closeWelcome} unlocked={unlocked} />
+      <ExpiredModal open={expiredOpen} tier={tier} onDismiss={dismissExpired} />
       <WinScreen
         open={winOpen}
         elapsedMs={elapsed}
@@ -239,6 +286,30 @@ export default function App() {
                 title="daily challenge run — counts toward today's leaderboard"
               >
                 ◇ DAILY {seed.slice(2)}
+              </span>
+            )}
+            {tier && tier !== 'story' && (
+              <span
+                className={`text-[10px] tracking-widest px-2 py-0.5 border ${
+                  tier === 'ghost'
+                    ? 'border-fuchsia-400 text-fuchsia-300 bg-fuchsia-500/10'
+                    : 'border-rose-400 text-rose-300 bg-rose-500/10'
+                }`}
+                title={`tier=${tier} · score multiplier ×${tierOrDefault(tier).mul}`}
+              >
+                ▲ {tier.toUpperCase()}
+              </span>
+            )}
+            {timerLeft != null && (
+              <span
+                className={`text-xs px-2 py-0.5 tabular-nums font-bold border ${
+                  timerLeft < 10000
+                    ? 'border-terminal-red text-terminal-red bg-terminal-red/15 animate-pulse'
+                    : 'border-rose-400/60 text-rose-300 bg-rose-500/10'
+                }`}
+                title="run timer — expires the run when it hits 0"
+              >
+                ⏱ {fmtMs(timerLeft)}
               </span>
             )}
           </div>
@@ -281,6 +352,7 @@ export default function App() {
             onReset={onReset}
             onHintUsed={() => setHintsUsed(n => n + 1)}
             seed={seed}
+            tier={tier}
           />
           <NetworkGraph
             nodes={NODES}
@@ -298,3 +370,29 @@ export default function App() {
     </div>
   );
 }
+
+function ExpiredModal({ open, tier, onDismiss }) {
+  if (!open) return null;
+  const cfg = tierOrDefault(tier);
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
+      <div className="max-w-md w-full bg-terminal-panel border-2 border-terminal-red shadow-[0_0_50px_#ef444499] p-6 text-terminal-green font-mono">
+        <div className="text-terminal-red text-xl tracking-widest mb-2">▣ RUN EXPIRED</div>
+        <div className="text-xs text-terminal-red/80 mb-4">
+          tier=<span className="text-terminal-red">{cfg.label}</span> · timer={cfg.timerMs / 1000}s · ops detected you
+        </div>
+        <div className="text-sm leading-relaxed mb-5">
+          you ran out of time. ops trace went hot. the wipe came early.
+          this run is forfeit — no leaderboard entry. retry from a fresh boot.
+        </div>
+        <button
+          onClick={onDismiss}
+          className="w-full px-4 py-2 bg-terminal-red/20 border border-terminal-red text-terminal-red hover:bg-terminal-red/40 text-sm tracking-widest"
+        >
+          [ NEW INSTANCE ]
+        </button>
+      </div>
+    </div>
+  );
+}
+
