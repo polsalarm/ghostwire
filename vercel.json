@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    { "source": "/build",   "destination": "/api/build" },
+    { "source": "/test",    "destination": "/api/test" },
+    { "source": "/deploy",  "destination": "/api/deploy" },
+    { "source": "/healthz", "destination": "/api/healthz" }
+  ]
+}
