@@ -34,6 +34,7 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
   const [boardErr, setBoardErr] = useState(null);
   const [activeTab, setActiveTab] = useState(seed && isDailySeed(seed) ? 'daily' : 'alltime');
   const [tierFilter, setTierFilter] = useState('all'); // all | story | hardened | ghost
+  const [moduleFilter, setModuleFilter] = useState('all'); // all | m1 | m2
   const [streak, setStreak] = useState(0);
   const [replay, setReplay] = useState(null); // { runId, handle, trace }
   const [replayLoading, setReplayLoading] = useState(null); // runId being fetched
@@ -69,8 +70,9 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
   }, [open, activeTab, myRun, isDaily, seed]);
 
   const filteredEntries = (board?.entries || []).filter(e => {
-    if (tierFilter === 'all') return true;
-    return (e.tier || 'story') === tierFilter;
+    if (tierFilter !== 'all' && (e.tier || 'story') !== tierFilter) return false;
+    if (moduleFilter !== 'all' && (e.module || 'm1') !== moduleFilter) return false;
+    return true;
   });
 
   async function onSubmit(e) {
@@ -226,7 +228,19 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
             >
               DAILY{isDaily ? ` ${seed.slice(2)}` : ''}
             </button>
-            <span className="ml-auto text-terminal-green/40 text-[10px]">tier:</span>
+            <span className="ml-auto text-terminal-green/40 text-[10px]">module:</span>
+            {['all', 'm1', 'm2'].map(m => (
+              <button
+                key={m}
+                onClick={() => setModuleFilter(m)}
+                className={`px-1.5 py-0.5 border text-[10px] tracking-wide ${moduleFilter === m
+                  ? 'border-cyan-400 text-cyan-300 bg-cyan-500/10'
+                  : 'border-cyan-400/20 text-cyan-300/40 hover:bg-cyan-500/5'}`}
+              >
+                {m.toUpperCase()}
+              </button>
+            ))}
+            <span className="text-terminal-green/40 text-[10px]">tier:</span>
             {['all', 'story', 'hardened', 'ghost'].map(t => (
               <button
                 key={t}
@@ -267,10 +281,12 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
                     const me = myRun && e.runId === myRun.runId;
                     const tBadge = e.tier === 'ghost' ? '◆' : e.tier === 'hardened' ? '▲' : '';
                     const tColor = e.tier === 'ghost' ? 'text-fuchsia-300' : e.tier === 'hardened' ? 'text-rose-300' : '';
+                    const mBadge = (e.module || 'm1').toUpperCase();
                     return (
                       <tr key={e.runId} className={me ? 'text-terminal-glow bg-terminal-glow/10' : 'text-terminal-green'}>
                         <td>{e.rank}</td>
                         <td className="truncate">
+                          <span className="mr-1 text-cyan-300/70 text-[9px] tracking-wide">{mBadge}</span>
                           {tBadge && <span className={`mr-1 ${tColor}`}>{tBadge}</span>}
                           {e.handle}{me ? ' ←' : ''}
                         </td>

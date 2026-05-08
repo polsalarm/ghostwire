@@ -5,6 +5,9 @@ import { genRouter, routerHintLines } from '../../shared/puzzles/router.js';
 import { genPipeline, pipelineHintLines } from '../../shared/puzzles/pipeline.js';
 import { genM2Jwt, jwtHintLines } from '../../shared/puzzles/m2_jwt.js';
 import { genM2Idor, idorHintLines } from '../../shared/puzzles/m2_idor.js';
+import { genM2Ratelimit, ratelimitHintLines } from '../../shared/puzzles/m2_ratelimit.js';
+import { genM2Proto, protoHintLines } from '../../shared/puzzles/m2_proto.js';
+import { genM2Smug, smugHintLines } from '../../shared/puzzles/m2_smug.js';
 import { tierOrDefault } from '../../shared/puzzles/tier.js';
 
 const HELP_BASE = [
@@ -21,19 +24,23 @@ const HELP_BASE = [
   '  GET  <path>                   send GET request',
   '  POST <path> <json>            send POST with JSON body',
   '  flood <path> <n> <json>       send N parallel POSTs (router overload)',
-  '  chain GET <p1> <p2> <p3>      hit 3 endpoints in sequence (CI/CD)'
+  '  chain GET <p1> <p2> <p3>      hit 3 endpoints in sequence (CI/CD)',
+  '  smug <Header=Val> ...         POST /api/m2/proxy with custom headers (M2 L5)'
 ];
 
 const LEVEL_LINES = {
-  gate:     '  L1 webhook_gate    POST /api/gate { role, clearance_code }',
-  router:   '  L2 cond_router     /api/router needs critical-branch overflow',
-  pipeline: '  L3 cicd_pipeline   chain GET /build /test /deploy under 5s',
-  jwt:      '  L1 jwt_auth        POST /api/m2/jwt with HS256 token, role=admin',
-  idor:     '  L2 user_api_idor   GET /api/m2/user?id=NNN — find the admin id'
+  gate:      '  L1 webhook_gate    POST /api/gate { role, clearance_code }',
+  router:    '  L2 cond_router     /api/router needs critical-branch overflow',
+  pipeline:  '  L3 cicd_pipeline   chain GET /build /test /deploy under deadline',
+  jwt:       '  L1 jwt_auth        POST /api/m2/jwt with HS256 token, role=admin',
+  idor:      '  L2 user_api_idor   GET /api/m2/user?id=NNN — find the admin id',
+  ratelimit: '  L3 throttle_bypass POST /api/m2/throttle — rotate client_id N times',
+  proto:     '  L4 proto_pollute   POST /api/m2/checkout {"__proto__":{<flag>:true}}',
+  smug:      '  L5 header_smuggle  POST /api/m2/proxy with X-Forwarded-Host'
 };
 
 const M1_ORDER = ['gate', 'router', 'pipeline'];
-const M2_ORDER = ['jwt', 'idor'];
+const M2_ORDER = ['jwt', 'idor', 'ratelimit', 'proto', 'smug'];
 
 function levelOrder(ctx) {
   return ctx.module === 'm2' ? M2_ORDER : M1_ORDER;
@@ -97,19 +104,31 @@ function m1TrafficForCtx(ctx) {
 }
 
 function m2TrafficForCtx(ctx) {
-  const j = genM2Jwt(ctx.seed || 'DEFAULT');
-  const i = genM2Idor(ctx.seed || 'DEFAULT');
-  // hint range: nearest 100 below + 99 above secretId
+  const seed = ctx.seed || 'DEFAULT';
+  const j = genM2Jwt(seed);
+  const i = genM2Idor(seed);
+  const rl = genM2Ratelimit(seed);
+  const pp = genM2Proto(seed);
+  const sm = genM2Smug(seed);
   const lo = Math.floor(i.secretId / 100) * 100;
   const hi = lo + 99;
   return [
-    { level: 'meta', line: '[09:11:02] inbound  GET  /healthz                         200' },
-    { level: 'jwt',  line: '[09:11:04] WARN auth-svc rejecting unsigned tokens' },
-    { level: 'jwt',  line: '[09:11:05] LEAK .env.bak grep "JWT_SECRET" → ' + JSON.stringify(j.secret) },
-    { level: 'jwt',  line: '[09:11:06] LEAK auth-svc expects HS256 + claims.role==="admin"' },
-    { level: 'idor', line: '[09:11:30] inbound  GET  /api/m2/user?id=42                200  { role:"guest" }' },
-    { level: 'idor', line: `[09:11:31] LEAK gateway-log: privileged user range [${lo}..${hi}]` },
-    { level: 'idor', line: '[09:11:32] LEAK no rate limit on /api/m2/user — burst freely' }
+    { level: 'meta',      line: '[09:11:02] inbound  GET  /healthz                         200' },
+    { level: 'jwt',       line: '[09:11:04] WARN auth-svc rejecting unsigned tokens' },
+    { level: 'jwt',       line: '[09:11:05] LEAK .env.bak grep "JWT_SECRET" → ' + JSON.stringify(j.secret) },
+    { level: 'jwt',       line: '[09:11:06] LEAK auth-svc expects HS256 + claims.role==="admin"' },
+    { level: 'idor',      line: '[09:11:30] inbound  GET  /api/m2/user?id=42                200  { role:"guest" }' },
+    { level: 'idor',      line: `[09:11:31] LEAK gateway-log: privileged user range [${lo}..${hi}]` },
+    { level: 'idor',      line: '[09:11:32] LEAK no rate limit on /api/m2/user — burst freely' },
+    { level: 'ratelimit', line: '[09:12:01] WARN /api/m2/throttle rate-limited by client_id' },
+    { level: 'ratelimit', line: `[09:12:02] LEAK config: target_unique_ids=${rl.threshold}, window_ms=${rl.windowMs}` },
+    { level: 'ratelimit', line: '[09:12:03] LEAK reuse of client_id only counts once — rotate to bypass' },
+    { level: 'proto',     line: '[09:12:30] WARN /api/m2/checkout merges body into config object' },
+    { level: 'proto',     line: '[09:12:31] LEAK src diff: lodash _.merge replaced w/ home-grown deepMerge (no __proto__ guard)' },
+    { level: 'proto',     line: `[09:12:32] LEAK admin-gate code: if (config.${pp.flagKey}) → bypass` },
+    { level: 'smug',      line: '[09:13:10] WARN /api/m2/proxy 404 for X-Forwarded-Host="public.api"' },
+    { level: 'smug',      line: `[09:13:11] LEAK reverse-proxy table: { "${sm.magicHost}": "admin-upstream" }` },
+    { level: 'smug',      line: '[09:13:12] LEAK send X-Forwarded-Host header to override route' }
   ];
 }
 
@@ -125,11 +144,14 @@ function trafficForCtx(ctx) {
 //        cross-reference `traffic` and the carved chamber walls
 function hintsForLevel(lvl, seed) {
   const s = seed || 'DEFAULT';
-  if (lvl === 'gate')     return gateHintLines(genGate(s));
-  if (lvl === 'router')   return routerHintLines(genRouter(s));
-  if (lvl === 'pipeline') return pipelineHintLines(genPipeline(s));
-  if (lvl === 'jwt')      return jwtHintLines(genM2Jwt(s));
-  if (lvl === 'idor')     return idorHintLines(genM2Idor(s));
+  if (lvl === 'gate')      return gateHintLines(genGate(s));
+  if (lvl === 'router')    return routerHintLines(genRouter(s));
+  if (lvl === 'pipeline')  return pipelineHintLines(genPipeline(s));
+  if (lvl === 'jwt')       return jwtHintLines(genM2Jwt(s));
+  if (lvl === 'idor')      return idorHintLines(genM2Idor(s));
+  if (lvl === 'ratelimit') return ratelimitHintLines(genM2Ratelimit(s));
+  if (lvl === 'proto')     return protoHintLines(genM2Proto(s));
+  if (lvl === 'smug')      return smugHintLines(genM2Smug(s));
   return ['no hint available'];
 }
 
@@ -152,6 +174,19 @@ function solutionFor(lvl, seed) {
   if (lvl === 'idor') {
     const i = genM2Idor(s);
     return `GET /api/m2/user?id=${i.secretId}`;
+  }
+  if (lvl === 'ratelimit') {
+    const r = genM2Ratelimit(s);
+    const ids = Array.from({ length: r.threshold }, (_, i) => `bot-${String(i + 1).padStart(3, '0')}`);
+    return ids.map(id => `POST /api/m2/throttle {"client_id":"${id}"}`).join(' ; ');
+  }
+  if (lvl === 'proto') {
+    const p = genM2Proto(s);
+    return `POST /api/m2/checkout {"item":"x","__proto__":{"${p.flagKey}":true}}`;
+  }
+  if (lvl === 'smug') {
+    const sm = genM2Smug(s);
+    return `smug X-Forwarded-Host=${sm.magicHost}`;
   }
   return null;
 }
@@ -280,11 +315,24 @@ export async function runCommand(raw, ctx) {
     const [, path, jsonRaw] = post;
     let body;
     try { body = JSON.parse(jsonRaw); } catch { return err(['parse_error: payload not valid JSON']); }
-    if (ctx.seed && /^\/api\/(gate|router|m2\/jwt)$/i.test(path)
+    if (ctx.seed && /^\/api\/(gate|router|m2\/(jwt|throttle|checkout))$/i.test(path)
         && body && typeof body === 'object' && !('seed' in body)) {
       body.seed = ctx.seed;
     }
     return await sendJson('POST', path, body);
+  }
+
+  // smug X-Header=value [Y-Header=value ...]  → POST /api/m2/proxy with custom headers
+  const smug = cmd.match(/^smug\s+(.+)$/i);
+  if (smug) {
+    const pairs = smug[1].split(/\s+/);
+    const headers = { 'content-type': 'application/json' };
+    for (const p of pairs) {
+      const eq = p.indexOf('=');
+      if (eq < 0) return err([`smug: bad pair "${p}". use Header=Value.`]);
+      headers[p.slice(0, eq).toLowerCase()] = p.slice(eq + 1);
+    }
+    return await sendRaw('POST', withSeed('/api/m2/proxy', ctx.seed), headers, '{}');
   }
 
   const get = cmd.match(/^GET\s+(\S+)$/i);
@@ -314,10 +362,28 @@ export async function runCommand(raw, ctx) {
 
 function withSeed(path, seed) {
   if (!seed) return path;
-  // pipeline GETs (/build, /test, /deploy) + M2 IDOR endpoint take seed via query
-  if (!/^\/(build|test|deploy|api\/m2\/user)/.test(path)) return path;
+  // GET endpoints that take seed via query: pipeline (/build /test /deploy),
+  // M2 IDOR (/api/m2/user), M2 smuggling (/api/m2/proxy)
+  if (!/^\/(build|test|deploy|api\/m2\/(user|proxy))/.test(path)) return path;
   if (path.includes('seed=')) return path;
   return path + (path.includes('?') ? '&' : '?') + 'seed=' + encodeURIComponent(seed);
+}
+
+async function sendRaw(method, path, headers, bodyStr) {
+  try {
+    const r = await fetch(path, { method, headers, body: bodyStr });
+    const text = await r.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = text; }
+    const lines = [`${r.status} ${r.statusText || ''}`.trim(), pretty(data)];
+    if (r.ok && data && data.unlock) {
+      lines.push(data.msg || `>>> ${data.unlock} unlocked`);
+      return { ok: true, unlock: data.unlock, lines };
+    }
+    return r.ok ? ok(lines) : err(lines);
+  } catch (e) {
+    return err([`network_error: ${e.message}`]);
+  }
 }
 
 function currentLevel(ctx) {

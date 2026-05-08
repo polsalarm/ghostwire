@@ -18,14 +18,17 @@ export const MODULES = {
   m2: {
     id: 'm2',
     label: 'M2 DATACENTER',
-    blurb: 'JWT tamper · IDOR enumeration',
+    blurb: 'JWT · IDOR · rate-limit · proto-pollute · header-smuggle',
     nodes: [
-      { id: 'jwt',  label: 'JWT_AUTH',       level: 1 },
-      { id: 'idor', label: 'USER_API_IDOR',  level: 2 },
-      { id: 'exit', label: 'PUBLIC_INTERNET', level: 3 }
+      { id: 'jwt',       label: 'JWT_AUTH',          level: 1 },
+      { id: 'idor',      label: 'USER_API_IDOR',     level: 2 },
+      { id: 'ratelimit', label: 'THROTTLE_BYPASS',   level: 3 },
+      { id: 'proto',     label: 'PROTO_POLLUTION',   level: 4 },
+      { id: 'smug',      label: 'HEADER_SMUGGLING',  level: 5 },
+      { id: 'exit',      label: 'PUBLIC_INTERNET',   level: 6 }
     ],
     supports3D: false,    // 3D environment for M2 ships in a later cycle
-    status: 'preview'      // 2 of 5 puzzles live
+    status: 'live'
   }
 };
 

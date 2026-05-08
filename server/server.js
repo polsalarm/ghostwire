@@ -6,6 +6,9 @@ import { genRouter } from '../shared/puzzles/router.js';
 import { genPipeline } from '../shared/puzzles/pipeline.js';
 import { genM2Jwt } from '../shared/puzzles/m2_jwt.js';
 import { genM2Idor } from '../shared/puzzles/m2_idor.js';
+import { genM2Ratelimit } from '../shared/puzzles/m2_ratelimit.js';
+import { genM2Proto } from '../shared/puzzles/m2_proto.js';
+import { genM2Smug } from '../shared/puzzles/m2_smug.js';
 import {
   dailySeed, todayUTC, secondsUntilNextUtcDay, isDailySeed, weekStartUTC
 } from '../shared/puzzles/rng.js';
@@ -344,6 +347,56 @@ app.get('/api/m2/user', (req, res) => {
   }
   const role = (id % 17 === 0) ? 'support' : 'guest';
   res.json({ user: { id, role, name: `user-${id}`, joined: '2026-0' + ((id % 9) + 1) } });
+});
+
+// ─── M2 LAB: rate-limit bypass ──────────────────────────────────────────
+const rlBuckets = {}; // seed -> Set<client_id>
+app.post('/api/m2/throttle', (req, res) => {
+  const { client_id, seed: s } = req.body || {};
+  const seed = s || 'DEFAULT';
+  const cfg = genM2Ratelimit(seed);
+  if (typeof client_id !== 'string' || !/^[a-zA-Z0-9_\-:.]{1,64}$/.test(client_id)) {
+    return res.status(400).json(cryptic('PAYLOAD_MALFORMED', 'client_id required'));
+  }
+  if (!rlBuckets[seed]) rlBuckets[seed] = new Set();
+  rlBuckets[seed].add(client_id);
+  const count = rlBuckets[seed].size;
+  if (count < cfg.threshold) {
+    return res.status(202).json({
+      status: 'accepted',
+      msg: `client_id "${client_id}" recorded · ${count}/${cfg.threshold}`,
+      rl_state: { unique_ids: count, threshold: cfg.threshold }
+    });
+  }
+  rlBuckets[seed].clear();
+  res.json({ status: 'rl_bypassed', unlock: 'ratelimit', msg: '>>> RATE_LIMIT bypassed via client_id rotation.' });
+});
+
+// ─── M2 LAB: prototype pollution ────────────────────────────────────────
+app.post('/api/m2/checkout', (req, res) => {
+  const body = req.body || {};
+  const seed = body.seed || 'DEFAULT';
+  const cfg = genM2Proto(seed);
+  const proto = Object.prototype.hasOwnProperty.call(body, '__proto__') ? body['__proto__'] : null;
+  const polluted = !!proto && proto[cfg.flagKey] === true;
+  if (!polluted) {
+    return res.json({
+      status: 'checkout_ok',
+      receipt: { id: Math.floor(Math.random() * 90000) + 10000, item: body?.item || 'unknown' }
+    });
+  }
+  res.json({ status: 'gate_open', unlock: 'proto', msg: `>>> PROTOTYPE polluted via __proto__.${cfg.flagKey}.` });
+});
+
+// ─── M2 LAB: header smuggling ───────────────────────────────────────────
+app.post('/api/m2/proxy', (req, res) => {
+  const seed = req.query.seed || 'DEFAULT';
+  const cfg = genM2Smug(seed);
+  const xfh = (req.headers['x-forwarded-host'] || '').toString();
+  if (xfh !== cfg.magicHost) {
+    return res.status(404).json(cryptic('PROXY_NOT_FOUND', 'no upstream', { received: xfh || '<none>' }));
+  }
+  res.json({ status: 'proxy_ok', upstream: cfg.magicHost, unlock: 'smug', msg: '>>> HEADER_SMUGGLING bypassed proxy filter.' });
 });
 
 // ─── meta ────────────────────────────────────────────────────────────────
