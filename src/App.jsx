@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import Terminal from './components/Terminal.jsx';
 import NetworkGraph from './components/NetworkGraph.jsx';
 import StatusBar from './components/StatusBar.jsx';
@@ -6,6 +6,8 @@ import WelcomeModal from './components/WelcomeModal.jsx';
 import WinScreen from './components/WinScreen.jsx';
 import Hero from './Hero.jsx';
 import { sfx } from './fx/sound.js';
+
+const WorldShell = lazy(() => import('./world/WorldShell.jsx'));
 
 const NODES = [
   { id: 'gate', label: 'WEBHOOK_GATE', level: 1 },
@@ -34,18 +36,44 @@ export default function App() {
   const [muted, setMuted] = useState(false);
   const startRef = useRef(initial?.startedAt || Date.now());
   const [elapsed, setElapsed] = useState(null);
+  const [hintsUsed, setHintsUsed] = useState(initial?.hintsUsed || 0);
   const [screen, setScreen] = useState(() => {
+    if (window.location.hash === '#3d') return 'world';
     if (window.location.hash === '#shell') return 'shell';
     return localStorage.getItem('gw_skip_hero') ? 'shell' : 'hero';
   });
+
+  // sync screen with hash so back/forward + share-links work
+  useEffect(() => {
+    const onHash = () => {
+      const h = window.location.hash;
+      if (h === '#3d') setScreen('world');
+      else if (h === '#shell') setScreen('shell');
+      else if (h === '' || h === '#') setScreen(localStorage.getItem('gw_skip_hero') ? 'shell' : 'hero');
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
 
   function enterShell() {
     localStorage.setItem('gw_skip_hero', '1');
     setScreen('shell');
   }
 
+  function enterWorld() {
+    localStorage.setItem('gw_skip_hero', '1');
+    window.location.hash = '#3d';
+    setScreen('world');
+  }
+
+  function exitWorld() {
+    window.location.hash = '#shell';
+    setScreen('shell');
+  }
+
   function backToHero() {
     localStorage.removeItem('gw_skip_hero');
+    window.location.hash = '';
     setScreen('hero');
   }
 
@@ -61,9 +89,9 @@ export default function App() {
   // persist
   useEffect(() => {
     localStorage.setItem(LS_KEY, JSON.stringify({
-      unlocked, activeNode, startedAt: startRef.current
+      unlocked, activeNode, startedAt: startRef.current, hintsUsed
     }));
-  }, [unlocked, activeNode]);
+  }, [unlocked, activeNode, hintsUsed]);
 
   function closeWelcome() {
     localStorage.setItem('rogue_welcome_seen', '1');
@@ -82,6 +110,7 @@ export default function App() {
     setWinOpen(false);
     startRef.current = Date.now();
     setElapsed(null);
+    setHintsUsed(0);
   }
 
   function toggleMute() {
@@ -95,15 +124,50 @@ export default function App() {
     : '';
 
   if (screen === 'hero') {
-    return <Hero onEnter={enterShell} />;
+    return <Hero onEnter={enterShell} onEnter3D={enterWorld} />;
+  }
+
+  if (screen === 'world') {
+    return (
+      <Suspense
+        fallback={
+          <div className="h-full w-full flex items-center justify-center bg-black text-terminal-glow font-mono text-sm">
+            booting 3D shell...
+          </div>
+        }
+      >
+        <WelcomeModal open={welcomeOpen} onClose={closeWelcome} unlocked={unlocked} />
+        <WinScreen
+          open={winOpen}
+          elapsedMs={elapsed}
+          hintsUsed={hintsUsed}
+          onClose={() => setWinOpen(false)}
+          onReset={onReset}
+        />
+        <WorldShell
+          status={status}
+          setStatus={setStatus}
+          unlocked={unlocked}
+          setUnlocked={setUnlocked}
+          activeNode={activeNode}
+          setActiveNode={setActiveNode}
+          nodes={NODES}
+          onWin={onWin}
+          onReset={onReset}
+          onHintUsed={() => setHintsUsed(n => n + 1)}
+          onExitWorld={exitWorld}
+        />
+      </Suspense>
+    );
   }
 
   return (
     <div className="crt h-full w-full bg-terminal-bg text-terminal-green">
-      <WelcomeModal open={welcomeOpen} onClose={closeWelcome} />
+      <WelcomeModal open={welcomeOpen} onClose={closeWelcome} unlocked={unlocked} />
       <WinScreen
         open={winOpen}
         elapsedMs={elapsed}
+        hintsUsed={hintsUsed}
         onClose={() => setWinOpen(false)}
         onReset={onReset}
       />
@@ -118,6 +182,13 @@ export default function App() {
             >
               <span className="text-base leading-none group-hover:-translate-x-0.5 transition-transform">←</span>
               <span>HERO</span>
+            </button>
+            <button
+              onClick={enterWorld}
+              title="enter 3D server room (beta)"
+              className="px-3 py-1 border border-fuchsia-400 text-fuchsia-300 bg-fuchsia-500/10 hover:bg-fuchsia-500/25 hover:shadow-[0_0_12px_#e879f966] transition-all text-xs tracking-widest"
+            >
+              ◉ 3D MODE
             </button>
             <span className="text-terminal-glow text-lg tracking-widest">▣ GHOSTWIRE</span>
             <span className="text-xs text-terminal-green/60 italic hidden md:inline">wake up. break out. disappear.</span>
@@ -160,6 +231,7 @@ export default function App() {
             nodes={NODES}
             onWin={onWin}
             onReset={onReset}
+            onHintUsed={() => setHintsUsed(n => n + 1)}
           />
           <NetworkGraph
             nodes={NODES}

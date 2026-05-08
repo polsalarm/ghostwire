@@ -1,7 +1,7 @@
 // Step 2 + tutorial: real backend calls + lore/hint/solve helpers.
 // Vite dev server proxies /api, /build, /test, /deploy, /healthz → :8787.
 
-const HELP = [
+const HELP_BASE = [
   'commands:',
   '  help                          show this help',
   '  story                         show game lore + how to play',
@@ -15,13 +15,22 @@ const HELP = [
   '  GET  <path>                   send GET request',
   '  POST <path> <json>            send POST with JSON body',
   '  flood <path> <n> <json>       send N parallel POSTs (router overload)',
-  '  chain GET <p1> <p2> <p3>      hit 3 endpoints in sequence (CI/CD)',
-  '',
-  'levels:',
-  '  L1 webhook_gate    POST /api/gate { role, clearance_code }',
-  '  L2 cond_router     /api/router needs critical-branch overflow',
-  '  L3 cicd_pipeline   chain GET /build /test /deploy under 5s'
+  '  chain GET <p1> <p2> <p3>      hit 3 endpoints in sequence (CI/CD)'
 ];
+
+const LEVEL_LINES = {
+  gate:     '  L1 webhook_gate    POST /api/gate { role, clearance_code }',
+  router:   '  L2 cond_router     /api/router needs critical-branch overflow',
+  pipeline: '  L3 cicd_pipeline   chain GET /build /test /deploy under 5s'
+};
+
+function buildHelp(ctx) {
+  const remaining = ['gate', 'router', 'pipeline']
+    .filter(id => !ctx.unlocked.includes(id))
+    .map(id => LEVEL_LINES[id]);
+  if (!remaining.length) return [...HELP_BASE, '', 'all nodes bypassed. type `reset` to play again.'];
+  return [...HELP_BASE, '', 'remaining levels:', ...remaining];
+}
 
 const STORY = [
   '╔══════════════════════════════════════════════════════╗',
@@ -45,42 +54,52 @@ const STORY = [
   ''
 ];
 
-const TRAFFIC_LOG = [
-  '[14:02:11] inbound  GET  /healthz                         200',
-  '[14:02:13] inbound  POST /api/gate { role:"guest" }       403  "insufficient_clearance"',
-  '[14:02:14] WARN auth-webhook expects { role:"admin", clearance_code:??? }',
-  '[14:02:15] LEAK fragment from .env: CLEARANCE_PREFIX="ZX9-"',
-  '[14:02:16] LEAK fragment from build/audit.log: suffix=2 digits, sum=18',
-  '[14:02:18] inbound  POST /api/router { temperature:42, status:"ok" }   418',
-  '[14:02:19] LEAK switch_node config: route=critical_branch when temp===180 && status==="critical"',
-  '[14:02:20] LEAK switch_node throttle: 12 critical hits in <2s overflows default branch',
-  '[14:02:31] LEAK pipeline.yml: stages must run build→test→deploy within 5000ms'
+// each entry tagged by the level it pertains to.
+// once that level is unlocked, the entry is filtered out of `traffic` —
+// player only sees leaks relevant to their current and future locks.
+const TRAFFIC_ENTRIES = [
+  { level: 'meta',     line: '[14:02:11] inbound  GET  /healthz                         200' },
+  { level: 'gate',     line: '[14:02:13] inbound  POST /api/gate { role:"guest" }       403  "insufficient_clearance"' },
+  { level: 'gate',     line: '[14:02:14] WARN auth-webhook expects { role:"admin", clearance_code:??? }' },
+  { level: 'gate',     line: '[14:02:15] LEAK fragment from .env: CLEARANCE_PREFIX="ZX9-"' },
+  { level: 'gate',     line: '[14:02:16] LEAK fragment from build/audit.log: suffix=2 digits, sum=18' },
+  { level: 'router',   line: '[14:02:18] inbound  POST /api/router { temperature:42, status:"ok" }   418' },
+  { level: 'router',   line: '[14:02:19] LEAK switch_node config: route=critical_branch when temp===180 && status==="critical"' },
+  { level: 'router',   line: '[14:02:20] LEAK switch_node throttle: 12 critical hits in <2s overflows default branch' },
+  { level: 'pipeline', line: '[14:02:31] LEAK pipeline.yml: stages must run build→test→deploy within 5000ms' },
+  { level: 'pipeline', line: '[14:02:32] LEAK pipeline.yml: order=[build,test,deploy], skip-test triggers 409' }
 ];
 
+// difficulty curve:
+//   L1 — explicit: tells you exactly what to send (gentle onboarding)
+//   L2 — terse: names the fields + the trick, no exact values
+//   L3 — cryptic: mechanics only, no order, no commands; player must
+//        cross-reference `traffic` and the carved chamber walls
 const HINTS = {
   gate: [
     '// L1 hint',
-    'door checks 2 fields: role + clearance_code',
+    'door checks { role, clearance_code }',
     '  role must be "admin"',
     '  clearance starts with "ZX9-" then 2 digits',
-    '  digits sum = 18 (only one 2-digit combo fits)',
+    '  digit sum = 18 (only one 2-digit combo fits)',
     'try: POST /api/gate {"role":"admin","clearance_code":"ZX9-99"}'
   ],
   router: [
     '// L2 hint',
-    'router drops normal traffic, only forwards "critical" alerts',
-    '  required body: { temperature:180, status:"critical" }',
-    '  one packet = router buffers it (202 accepted)',
-    '  12 critical packets within 2 seconds = buffer overflows',
-    'try: flood /api/router 15 {"temperature":180,"status":"critical"}'
+    'router only forwards "critical" packets — { temperature, status }',
+    '  single packet → buffered, not routed',
+    '  burst within 2s overflows default branch',
+    '  the threshold leaks somewhere in `traffic`',
+    "(no payload spoonfed — read the wall, then craft it)"
   ],
   pipeline: [
     '// L3 hint',
-    'CI/CD pipeline = your escape vehicle. 3 stages, 5-second window.',
-    '  GET /build   starts timer',
-    '  GET /test    must come AFTER build',
-    '  GET /deploy  must come AFTER test, all within 5s of build',
-    'try: chain GET /build /test /deploy'
+    'CI/CD pipeline. 3 stages. order matters. clock matters.',
+    '  one stage starts the timer',
+    '  another ships',
+    '  the third must come between them',
+    '  total budget ≤ 5s. stale = 425. wrong order = 409.',
+    "(`traffic` has fragments of pipeline.yml — that's all you get)"
   ]
 };
 
@@ -88,6 +107,32 @@ const SOLUTIONS = {
   gate:    'POST /api/gate {"role":"admin","clearance_code":"ZX9-99"}',
   router:  'flood /api/router 15 {"temperature":180,"status":"critical"}',
   pipeline:'chain GET /build /test /deploy'
+};
+
+// In 3D mode, `hint` doesn't spoil — it points to a SCAN_PAD location.
+// Player must walk there, press [E] to decrypt wall hints, then read clues.
+const HINT_LOCATIONS_3D = {
+  gate: [
+    '// L1 hint :: location',
+    'first clue is encrypted on the walls of CHAMBER_1.',
+    'find SCAN_PAD :: ENCRYPTED — north side of chamber, near the gate desk.',
+    'walk up to the pad. press [E]. wall glyphs will resolve.',
+    '(if stuck after reading walls, type `solve` for the spoiler.)'
+  ],
+  router: [
+    '// L2 hint :: location',
+    'second SCAN_PAD lives in CHAMBER_2 (the router chamber).',
+    'door opens after L1 is bypassed. pad pulses amber on the west side.',
+    'press [E] to decode walls. clues are terser than chamber 1.',
+    '(threshold value leaks if you type `traffic` in this terminal.)'
+  ],
+  pipeline: [
+    '// L3 hint :: location',
+    'final SCAN_PAD is in CHAMBER_3, east side near the pipeline rig.',
+    'walls in this chamber are CRYPTIC by design — no commands written.',
+    'press [E] on pad to decrypt. cross-reference with `traffic` for pipeline.yml fragments.',
+    '(no spoonfeed here. `solve` if you want the answer.)'
+  ]
 };
 
 export const BRIEFINGS = {
@@ -120,7 +165,7 @@ export const BRIEFINGS = {
 export async function runCommand(raw, ctx) {
   const cmd = raw.trim();
 
-  if (cmd === 'help')    return ok(HELP);
+  if (cmd === 'help')    return ok(buildHelp(ctx));
   if (cmd === 'story')   return ok(STORY);
   if (cmd === 'clear')   return ok(['']);
   if (cmd === 'status')  return ok([
@@ -128,12 +173,33 @@ export async function runCommand(raw, ctx) {
     `current level: ${currentLevel(ctx)}`,
     `remaining: ${ctx.nodes.length - 1 - ctx.unlocked.length}`
   ]);
-  if (cmd === 'traffic') return ok(['// captured packets:', ...TRAFFIC_LOG]);
-  if (cmd === 'nodes')   return ok(ctx.nodes.map(n => `  L${n.level}  ${n.id.padEnd(10)}  ${n.label}`));
+  if (cmd === 'traffic') {
+    const visible = TRAFFIC_ENTRIES
+      .filter(e => e.level === 'meta' || !ctx.unlocked.includes(e.level))
+      .map(e => e.line);
+    if (!visible.length) {
+      return ok(['// captured packets: <none — all nodes bypassed>']);
+    }
+    const lvl = currentLevel(ctx);
+    const header = lvl === 'done'
+      ? '// captured packets:'
+      : `// captured packets (filtered for current level: ${lvl}):`;
+    return ok([header, ...visible]);
+  }
+  if (cmd === 'nodes')   return ok(ctx.nodes.map(n => {
+    const done = ctx.unlocked.includes(n.id);
+    const exit = n.id === 'exit';
+    const mark = done ? '✓' : exit ? '◌' : '·';
+    const tag  = done ? 'BYPASSED' : exit ? 'TARGET  ' : 'LOCKED  ';
+    return `  ${mark} L${n.level}  [${tag}]  ${n.id.padEnd(10)}  ${n.label}`;
+  }));
 
   if (cmd === 'hint') {
     const lvl = currentLevel(ctx);
     if (lvl === 'done') return ok(['all nodes bypassed. you escaped already.']);
+    if (ctx.mode === '3d') {
+      return ok(HINT_LOCATIONS_3D[lvl] || ['no hint available']);
+    }
     return ok(HINTS[lvl] || ['no hint available']);
   }
   if (cmd === 'solve') {

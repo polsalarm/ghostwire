@@ -162,6 +162,41 @@ app.get('/deploy', (req, res) => {
   });
 });
 
+// ─── leaderboard (in-memory dev mirror of Vercel/Upstash impl) ───────────
+const LB_MIN_TIME = 5_000;
+const LB_MAX_TIME = 60 * 60_000;
+const lb = []; // { runId, handle, timeMs, hintsUsed, score, ts }
+
+function sanitizeHandle(raw) {
+  if (typeof raw !== 'string') return null;
+  const h = raw.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 16);
+  return h.length >= 2 ? h : null;
+}
+
+app.post('/api/run/finish', (req, res) => {
+  const { handle: rawHandle, timeMs: rawTime, hintsUsed: rawHints } = req.body || {};
+  const handle = sanitizeHandle(rawHandle);
+  const timeMs = Number(rawTime);
+  const hintsUsed = Math.max(0, Math.floor(Number(rawHints) || 0));
+  if (!handle) return res.status(400).json(cryptic('BAD_HANDLE', 'handle must be 2-16 chars [a-z0-9_-]'));
+  if (!Number.isFinite(timeMs) || timeMs < LB_MIN_TIME || timeMs > LB_MAX_TIME) {
+    return res.status(400).json(cryptic('BAD_TIME', 'timeMs out of range'));
+  }
+  const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const score = Math.round(timeMs + hintsUsed * 5000);
+  lb.push({ runId, handle, timeMs, hintsUsed, score, ts: Date.now() });
+  lb.sort((a, b) => a.score - b.score);
+  if (lb.length > 1000) lb.length = 1000;
+  const rank = lb.findIndex(r => r.runId === runId);
+  res.json({ ok: true, runId, handle, score, rank: rank >= 0 ? rank + 1 : null, timeMs, hintsUsed });
+});
+
+app.get('/api/leaderboard', (req, res) => {
+  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 100));
+  const entries = lb.slice(0, limit).map((r, i) => ({ rank: i + 1, ...r }));
+  res.json({ window: 'alltime', count: entries.length, entries });
+});
+
 // ─── meta ────────────────────────────────────────────────────────────────
 app.get('/healthz', (_req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 

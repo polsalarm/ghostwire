@@ -1,7 +1,25 @@
 import React from 'react';
 
-export default function WelcomeModal({ open, onClose }) {
+const LEVEL_DEFS = [
+  { id: 'gate',     label: 'L1', body: 'webhook gate — guess admin password (POST)' },
+  { id: 'router',   label: 'L2', body: 'conditional router — flood "critical" packets to overflow' },
+  { id: 'pipeline', label: 'L3', body: 'CI/CD pipeline — chain build→test→deploy in 5s' }
+];
+
+function loadUnlocked() {
+  try {
+    const raw = localStorage.getItem('rogue_progress_v1');
+    if (!raw) return [];
+    return JSON.parse(raw).unlocked || [];
+  } catch { return []; }
+}
+
+export default function WelcomeModal({ open, onClose, unlocked }) {
   if (!open) return null;
+
+  const done = Array.isArray(unlocked) ? unlocked : loadUnlocked();
+  const remaining = LEVEL_DEFS.filter(l => !done.includes(l.id));
+  const allDone = remaining.length === 0;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -29,10 +47,19 @@ export default function WelcomeModal({ open, onClose }) {
         </div>
 
         <div className="bg-black/40 border border-terminal-glow/30 p-3 text-xs leading-relaxed mb-4">
-          <div className="text-terminal-glow mb-1">// LEVELS</div>
-          <div><span className="text-terminal-glow">L1</span> webhook gate — guess admin password (POST)</div>
-          <div><span className="text-terminal-glow">L2</span> conditional router — flood "critical" packets to overflow</div>
-          <div><span className="text-terminal-glow">L3</span> CI/CD pipeline — chain build→test→deploy in 5s</div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-terminal-glow">// {allDone ? 'PROGRESS' : 'REMAINING LEVELS'}</span>
+            <span className="text-terminal-green/60">{done.length}/{LEVEL_DEFS.length} bypassed</span>
+          </div>
+          {allDone ? (
+            <div className="text-emerald-300">all nodes bypassed. type `reset` in shell to play again.</div>
+          ) : (
+            remaining.map(l => (
+              <div key={l.id}>
+                <span className="text-terminal-glow">{l.label}</span> {l.body}
+              </div>
+            ))
+          )}
         </div>
 
         <div className="text-[11px] text-terminal-green/60 mb-4">

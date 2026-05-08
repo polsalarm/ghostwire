@@ -22,7 +22,7 @@ const LINE_PAUSE_MS = 30;    // between lines
 
 export default function Terminal({
   status, setStatus, unlocked, setUnlocked, activeNode, setActiveNode, nodes,
-  onWin, onReset
+  onWin, onReset, onHintUsed, mode = 'terminal'
 }) {
   const [history, setHistory] = useState(BANNER.map(t => ({ text: t, kind: 'sys' })));
   const [queue, setQueue] = useState([]);
@@ -146,8 +146,12 @@ export default function Terminal({
       return;
     }
 
+    if (cmd === 'hint' || cmd === 'solve') {
+      onHintUsed?.(cmd);
+    }
+
     setStatus('processing');
-    const result = await runCommand(cmd, { unlocked, nodes });
+    const result = await runCommand(cmd, { unlocked, nodes, mode });
 
     commitLines(result.lines, result.ok ? 'ok' : 'err');
 
@@ -155,14 +159,31 @@ export default function Terminal({
 
     if (result.unlock && !unlocked.includes(result.unlock)) {
       const newUnlocked = [...unlocked, result.unlock];
+      const unlockedId = result.unlock;
       setUnlocked(newUnlocked);
-      setActiveNode(nextNode(result.unlock, nodes));
+      setActiveNode(nextNode(unlockedId, nodes));
       setTimeout(() => sfx.unlock(), 350);
-      const briefing = BRIEFINGS[result.unlock];
-      if (briefing) setTimeout(() => commitLines(briefing, 'sys'), 600);
+
+      const briefing = BRIEFINGS[unlockedId];
+      // wipe scrollback so only current-level context remains.
+      // gives a "context switch" feel — old failed attempts + traffic logs gone.
+      setTimeout(() => {
+        flushQueue();
+        const levelNum = nodes.findIndex(n => n.id === unlockedId) + 1;
+        const banner = [
+          '═══════════════════════════════════════════════════════',
+          `   ▣ NODE_${levelNum} BYPASSED · scrollback flushed`,
+          `   active level: L${levelNum + 1}` + (briefing ? '' : ' (final)'),
+          '   `traffic` re-prints leak log · `hint` for clue · `solve` for answer',
+          '═══════════════════════════════════════════════════════',
+          ''
+        ];
+        setHistory(banner.map(text => ({ text, kind: 'sys' })));
+        if (briefing) commitLines(briefing, 'sys');
+      }, 1100);
 
       if (newUnlocked.length === nodes.length - 1) {
-        setTimeout(() => { sfx.win(); onWin?.(); }, 1200);
+        setTimeout(() => { sfx.win(); onWin?.(); }, 1800);
       }
     }
     if (result.activeNode) setActiveNode(result.activeNode);
