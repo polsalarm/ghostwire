@@ -1,8 +1,11 @@
 import express from 'express';
 import cors from 'cors';
+import crypto from 'node:crypto';
 import { genGate } from '../shared/puzzles/gate.js';
 import { genRouter } from '../shared/puzzles/router.js';
 import { genPipeline } from '../shared/puzzles/pipeline.js';
+import { genM2Jwt } from '../shared/puzzles/m2_jwt.js';
+import { genM2Idor } from '../shared/puzzles/m2_idor.js';
 import {
   dailySeed, todayUTC, secondsUntilNextUtcDay, isDailySeed, weekStartUTC
 } from '../shared/puzzles/rng.js';
@@ -279,6 +282,68 @@ app.get('/api/run/replay', (req, res) => {
     seed: entry.seed,
     trace: traceStore[id] || []
   });
+});
+
+// ─── M2 LAB: JWT tampering ──────────────────────────────────────────────
+function b64urlDecode(s) {
+  s = String(s).replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  return Buffer.from(s, 'base64');
+}
+function verifyJwtHS256(token, secret) {
+  if (typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const [h, p, sig] = parts;
+  let header;
+  try { header = JSON.parse(b64urlDecode(h).toString('utf8')); } catch { return null; }
+  if (header?.alg !== 'HS256') return null;
+  const expected = crypto.createHmac('sha256', secret).update(`${h}.${p}`).digest('base64url');
+  if (expected !== sig) return null;
+  try { return JSON.parse(b64urlDecode(p).toString('utf8')); } catch { return null; }
+}
+
+app.post('/api/m2/jwt', (req, res) => {
+  const { token, seed } = req.body || {};
+  const cfg = genM2Jwt(seed || 'DEFAULT');
+  if (!token || typeof token !== 'string') {
+    return res.status(400).json(cryptic('PAYLOAD_MALFORMED', 'token required'));
+  }
+  const claims = verifyJwtHS256(token, cfg.secret);
+  if (!claims) {
+    return res.status(401).json(cryptic('AUTH_FAILED', 'sig_invalid', {
+      hint: 'wrong secret or alg≠HS256'
+    }));
+  }
+  if (claims.role !== cfg.expectedRole) {
+    return res.status(403).json(cryptic('AUTH_INSUFFICIENT', 'role_not_privileged', {
+      hint: `claims.role must equal "${cfg.expectedRole}"`,
+      received: claims.role
+    }));
+  }
+  return res.json({
+    status: 'jwt_ok', claims, unlock: 'jwt',
+    msg: '>>> JWT_AUTH bypassed. user_api exposed at /api/m2/user'
+  });
+});
+
+// ─── M2 LAB: IDOR ────────────────────────────────────────────────────────
+app.get('/api/m2/user', (req, res) => {
+  const seed = req.query.seed || 'DEFAULT';
+  const id = parseInt(req.query.id, 10);
+  const cfg = genM2Idor(seed);
+  if (!Number.isFinite(id) || id < 0) {
+    return res.status(400).json(cryptic('BAD_ID', 'id must be a non-negative integer'));
+  }
+  if (id === cfg.secretId) {
+    return res.json({
+      user: { id, role: 'admin', flag: cfg.flag },
+      unlock: 'idor',
+      msg: '>>> USER_API_IDOR bypassed. internal flag exposed.'
+    });
+  }
+  const role = (id % 17 === 0) ? 'support' : 'guest';
+  res.json({ user: { id, role, name: `user-${id}`, joined: '2026-0' + ((id % 9) + 1) } });
 });
 
 // ─── meta ────────────────────────────────────────────────────────────────

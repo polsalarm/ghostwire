@@ -41,6 +41,7 @@ export default async function handler(req, res) {
     const seed = typeof body?.seed === 'string' ? body.seed : 'DEFAULT';
     const tier = tierOrDefault(body?.tier).id;
     const trace = sanitizeTrace(body?.trace);
+    const module = typeof body?.module === 'string' && /^m[1-5]$/.test(body.module) ? body.module : 'm1';
 
     if (!handle) {
       return res.status(400).json(cryptic('BAD_HANDLE', 'handle must be 2-16 chars [a-z0-9_-]'));
@@ -68,6 +69,7 @@ export default async function handler(req, res) {
       ts: now,
       seed,
       tier,
+      module,
       hasTrace: trace.length > 0 ? 1 : 0
     };
     if (trace.length > 0) {

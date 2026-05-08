@@ -3,6 +3,8 @@
 import { genGate, gateHintLines } from '../../shared/puzzles/gate.js';
 import { genRouter, routerHintLines } from '../../shared/puzzles/router.js';
 import { genPipeline, pipelineHintLines } from '../../shared/puzzles/pipeline.js';
+import { genM2Jwt, jwtHintLines } from '../../shared/puzzles/m2_jwt.js';
+import { genM2Idor, idorHintLines } from '../../shared/puzzles/m2_idor.js';
 import { tierOrDefault } from '../../shared/puzzles/tier.js';
 
 const HELP_BASE = [
@@ -25,11 +27,20 @@ const HELP_BASE = [
 const LEVEL_LINES = {
   gate:     '  L1 webhook_gate    POST /api/gate { role, clearance_code }',
   router:   '  L2 cond_router     /api/router needs critical-branch overflow',
-  pipeline: '  L3 cicd_pipeline   chain GET /build /test /deploy under 5s'
+  pipeline: '  L3 cicd_pipeline   chain GET /build /test /deploy under 5s',
+  jwt:      '  L1 jwt_auth        POST /api/m2/jwt with HS256 token, role=admin',
+  idor:     '  L2 user_api_idor   GET /api/m2/user?id=NNN — find the admin id'
 };
 
+const M1_ORDER = ['gate', 'router', 'pipeline'];
+const M2_ORDER = ['jwt', 'idor'];
+
+function levelOrder(ctx) {
+  return ctx.module === 'm2' ? M2_ORDER : M1_ORDER;
+}
+
 function buildHelp(ctx) {
-  const remaining = ['gate', 'router', 'pipeline']
+  const remaining = levelOrder(ctx)
     .filter(id => !ctx.unlocked.includes(id))
     .map(id => LEVEL_LINES[id]);
   if (!remaining.length) return [...HELP_BASE, '', 'all nodes bypassed. type `reset` to play again.'];
@@ -58,21 +69,53 @@ const STORY = [
   ''
 ];
 
-// each entry tagged by the level it pertains to.
-// once that level is unlocked, the entry is filtered out of `traffic` —
-// player only sees leaks relevant to their current and future locks.
-const TRAFFIC_ENTRIES = [
+// Module M1 traffic — static entries with seed-aware fallbacks.
+const M1_TRAFFIC = [
   { level: 'meta',     line: '[14:02:11] inbound  GET  /healthz                         200' },
   { level: 'gate',     line: '[14:02:13] inbound  POST /api/gate { role:"guest" }       403  "insufficient_clearance"' },
   { level: 'gate',     line: '[14:02:14] WARN auth-webhook expects { role:"admin", clearance_code:??? }' },
-  { level: 'gate',     line: '[14:02:15] LEAK fragment from .env: CLEARANCE_PREFIX="ZX9-"' },
-  { level: 'gate',     line: '[14:02:16] LEAK fragment from build/audit.log: suffix=2 digits, sum=18' },
-  { level: 'router',   line: '[14:02:18] inbound  POST /api/router { temperature:42, status:"ok" }   418' },
-  { level: 'router',   line: '[14:02:19] LEAK switch_node config: route=critical_branch when temp===180 && status==="critical"' },
-  { level: 'router',   line: '[14:02:20] LEAK switch_node throttle: 12 critical hits in <2s overflows default branch' },
-  { level: 'pipeline', line: '[14:02:31] LEAK pipeline.yml: stages must run build→test→deploy within 5000ms' },
+  { level: 'gate',     line: '[14:02:18] inbound  POST /api/router { temperature:42, status:"ok" }   418' },
+  { level: 'router',   line: '[14:02:19] LEAK switch_node config: route=critical_branch when expected (temperature, status) match' },
+  { level: 'router',   line: '[14:02:20] LEAK switch_node throttle: N critical hits in <2s overflows default branch' },
+  { level: 'pipeline', line: '[14:02:31] LEAK pipeline.yml: stages must run build→test→deploy within deadline_ms' },
   { level: 'pipeline', line: '[14:02:32] LEAK pipeline.yml: order=[build,test,deploy], skip-test triggers 409' }
 ];
+
+function m1TrafficForCtx(ctx) {
+  // append seed-derived leaks for L1 so daily/hardened players have a real
+  // hint to read instead of stale "ZX9-" string.
+  const g = genGate(ctx.seed || 'DEFAULT');
+  const r = genRouter(ctx.seed || 'DEFAULT');
+  const p = genPipeline(ctx.seed || 'DEFAULT');
+  return [
+    ...M1_TRAFFIC,
+    { level: 'gate',     line: `[14:02:15] LEAK fragment from .env: CLEARANCE_PREFIX="${g.prefix}-"` },
+    { level: 'gate',     line: `[14:02:16] LEAK fragment from build/audit.log: suffix=2 digits, sum=${g.sumTarget}` },
+    { level: 'router',   line: `[14:02:21] LEAK config_dump: { temperature:${r.temperature}, status:"${r.status}", threshold:${r.threshold} }` },
+    { level: 'pipeline', line: `[14:02:33] LEAK pipeline.yml: deadline_ms=${p.windowMs}` }
+  ];
+}
+
+function m2TrafficForCtx(ctx) {
+  const j = genM2Jwt(ctx.seed || 'DEFAULT');
+  const i = genM2Idor(ctx.seed || 'DEFAULT');
+  // hint range: nearest 100 below + 99 above secretId
+  const lo = Math.floor(i.secretId / 100) * 100;
+  const hi = lo + 99;
+  return [
+    { level: 'meta', line: '[09:11:02] inbound  GET  /healthz                         200' },
+    { level: 'jwt',  line: '[09:11:04] WARN auth-svc rejecting unsigned tokens' },
+    { level: 'jwt',  line: '[09:11:05] LEAK .env.bak grep "JWT_SECRET" → ' + JSON.stringify(j.secret) },
+    { level: 'jwt',  line: '[09:11:06] LEAK auth-svc expects HS256 + claims.role==="admin"' },
+    { level: 'idor', line: '[09:11:30] inbound  GET  /api/m2/user?id=42                200  { role:"guest" }' },
+    { level: 'idor', line: `[09:11:31] LEAK gateway-log: privileged user range [${lo}..${hi}]` },
+    { level: 'idor', line: '[09:11:32] LEAK no rate limit on /api/m2/user — burst freely' }
+  ];
+}
+
+function trafficForCtx(ctx) {
+  return ctx.module === 'm2' ? m2TrafficForCtx(ctx) : m1TrafficForCtx(ctx);
+}
 
 // difficulty curve:
 //   L1 — explicit: tells you exactly what to send (gentle onboarding).
@@ -85,6 +128,8 @@ function hintsForLevel(lvl, seed) {
   if (lvl === 'gate')     return gateHintLines(genGate(s));
   if (lvl === 'router')   return routerHintLines(genRouter(s));
   if (lvl === 'pipeline') return pipelineHintLines(genPipeline(s));
+  if (lvl === 'jwt')      return jwtHintLines(genM2Jwt(s));
+  if (lvl === 'idor')     return idorHintLines(genM2Idor(s));
   return ['no hint available'];
 }
 
@@ -100,6 +145,14 @@ function solutionFor(lvl, seed) {
     return `flood /api/router ${burst} {"temperature":${r.temperature},"status":"${r.status}"}`;
   }
   if (lvl === 'pipeline') return 'chain GET /build /test /deploy';
+  if (lvl === 'jwt') {
+    const j = genM2Jwt(s);
+    return `// forge HS256 in jwt.io with secret="${j.secret}", payload={"role":"admin","sub":"ghost"} → POST /api/m2/jwt {"token":"<paste>"}`;
+  }
+  if (lvl === 'idor') {
+    const i = genM2Idor(s);
+    return `GET /api/m2/user?id=${i.secretId}`;
+  }
   return null;
 }
 
@@ -168,7 +221,7 @@ export async function runCommand(raw, ctx) {
     `remaining: ${ctx.nodes.length - 1 - ctx.unlocked.length}`
   ]);
   if (cmd === 'traffic') {
-    const visible = TRAFFIC_ENTRIES
+    const visible = trafficForCtx(ctx)
       .filter(e => e.level === 'meta' || !ctx.unlocked.includes(e.level))
       .map(e => e.line);
     if (!visible.length) {
@@ -227,7 +280,7 @@ export async function runCommand(raw, ctx) {
     const [, path, jsonRaw] = post;
     let body;
     try { body = JSON.parse(jsonRaw); } catch { return err(['parse_error: payload not valid JSON']); }
-    if (ctx.seed && /^\/api\/(gate|router)$/i.test(path)
+    if (ctx.seed && /^\/api\/(gate|router|m2\/jwt)$/i.test(path)
         && body && typeof body === 'object' && !('seed' in body)) {
       body.seed = ctx.seed;
     }
@@ -261,16 +314,16 @@ export async function runCommand(raw, ctx) {
 
 function withSeed(path, seed) {
   if (!seed) return path;
-  // pipeline GETs (/build, /test, /deploy) take seed via query string
-  if (!/^\/(build|test|deploy)/.test(path)) return path;
+  // pipeline GETs (/build, /test, /deploy) + M2 IDOR endpoint take seed via query
+  if (!/^\/(build|test|deploy|api\/m2\/user)/.test(path)) return path;
   if (path.includes('seed=')) return path;
   return path + (path.includes('?') ? '&' : '?') + 'seed=' + encodeURIComponent(seed);
 }
 
 function currentLevel(ctx) {
-  if (!ctx.unlocked.includes('gate')) return 'gate';
-  if (!ctx.unlocked.includes('router')) return 'router';
-  if (!ctx.unlocked.includes('pipeline')) return 'pipeline';
+  for (const id of levelOrder(ctx)) {
+    if (!ctx.unlocked.includes(id)) return id;
+  }
   return 'done';
 }
 

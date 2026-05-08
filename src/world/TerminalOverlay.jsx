@@ -7,7 +7,7 @@ import { useWorld } from './store.js';
 // shell — preserving all existing engine.js logic untouched.
 export default function TerminalOverlay({
   status, setStatus, unlocked, setUnlocked, activeNode, setActiveNode, nodes,
-  onWin, onReset, onHintUsed, banner, seed, tier
+  onWin, onReset, onHintUsed, banner, seed, tier, module
 }) {
   const activeTerminal = useWorld(s => s.activeTerminal);
   const closeTerminal = useWorld(s => s.closeTerminal);
@@ -48,6 +48,7 @@ export default function TerminalOverlay({
             mode="3d"
             seed={seed}
             tier={tier}
+            module={module}
           />
         </div>
       </div>

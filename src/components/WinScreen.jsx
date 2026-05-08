@@ -23,7 +23,7 @@ function fmtTime(ms) {
   return s < 60 ? `${s.toFixed(1)}s` : `${Math.floor(s / 60)}m${(s % 60).toFixed(0).padStart(2, '0')}`;
 }
 
-export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed = 0, seed = null, tier = 'story' }) {
+export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed = 0, seed = null, tier = 'story', module = 'm1' }) {
   const tierCfg = tierOrDefault(tier);
   const [shown, setShown] = useState(0);
   const [handle, setHandle] = useState(() => localStorage.getItem(HANDLE_KEY) || '');
@@ -86,6 +86,7 @@ export default function WinScreen({ open, onReset, onClose, elapsedMs, hintsUsed
         hintsUsed,
         seed: seed || 'DEFAULT',
         tier,
+        module,
         trace
       });
       localStorage.setItem(HANDLE_KEY, result.handle);

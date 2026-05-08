@@ -74,6 +74,7 @@ export default function Hero({ onEnter, onEnter3D }) {
   const [dailyMode, setDailyMode] = useState(false); // when true, handleEnter starts a daily run
   const [tierChoice, setTierChoice] = useState('story'); // story | hardened | ghost
   const [targetMode, setTargetMode] = useState('shell'); // 'shell' | 'world'
+  const [moduleChoice, setModuleChoice] = useState('m1'); // 'm1' | 'm2'
 
   // fetch daily config + load streak on mount
   React.useEffect(() => {
@@ -201,9 +202,10 @@ export default function Hero({ onEnter, onEnter3D }) {
   function closeBriefing() {
     localStorage.setItem('rogue_welcome_seen', '1');
     setBriefingOpen(false);
-    const opts = { daily: dailyMode, tier: tierChoice };
+    const opts = { daily: dailyMode, tier: tierChoice, module: moduleChoice };
     setTimeout(() => {
-      if (targetMode === 'world') onEnter3D?.(opts);
+      // M2 doesn't ship its 3D environment yet — fall back to terminal
+      if (targetMode === 'world' && moduleChoice === 'm1') onEnter3D?.(opts);
       else onEnter?.(opts);
     }, 200);
   }
@@ -336,6 +338,31 @@ export default function Hero({ onEnter, onEnter3D }) {
           </p>
 
           <div className="flex flex-col gap-3 items-start lg:items-end w-full lg:w-auto">
+            {/* module picker */}
+            <div className="flex gap-1.5 text-[10px] tracking-[0.25em]">
+              {[
+                { id: 'm1', label: 'M1 SERVER_ROOM',  note: 'gate · router · pipeline' },
+                { id: 'm2', label: 'M2 DATACENTER',   note: 'JWT tamper · IDOR (preview)' }
+              ].map(m => {
+                const active = moduleChoice === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => setModuleChoice(m.id)}
+                    disabled={booting || briefingOpen}
+                    title={m.note}
+                    className={`px-2.5 py-1 border transition-colors ${
+                      active
+                        ? 'border-cyan-400 text-cyan-200 bg-cyan-500/15'
+                        : 'border-[#9bffb0]/30 text-[#9bffb0]/60 hover:bg-[#9bffb0]/10'
+                    }`}
+                    style={{ fontFamily: 'JetBrains Mono, monospace' }}
+                  >
+                    {m.label}{m.id === 'm2' ? ' [preview]' : ''}
+                  </button>
+                );
+              })}
+            </div>
             {/* tier picker */}
             <div className="flex gap-1.5 text-[10px] tracking-[0.25em]">
               {[

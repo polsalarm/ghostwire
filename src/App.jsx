@@ -8,16 +8,13 @@ import Hero from './Hero.jsx';
 import { sfx } from './fx/sound.js';
 import { dailySeed, todayUTC, isDailySeed } from '../shared/puzzles/rng.js';
 import { TIERS, tierOrDefault } from '../shared/puzzles/tier.js';
+import { MODULES, moduleOrDefault } from '../shared/modules/registry.js';
 import { startRecording, stopRecording, snapshot as snapshotTrace } from './runRecorder.js';
 
 const WorldShell = lazy(() => import('./world/WorldShell.jsx'));
 
-const NODES = [
-  { id: 'gate', label: 'WEBHOOK_GATE', level: 1 },
-  { id: 'router', label: 'COND_ROUTER', level: 2 },
-  { id: 'pipeline', label: 'CICD_PIPELINE', level: 3 },
-  { id: 'exit', label: 'PUBLIC_INTERNET', level: 4 }
-];
+// NODES per module — keep M1 default but resolve via registry below.
+const NODES = MODULES.m1.nodes;
 
 const LS_KEY = 'rogue_progress_v1';
 
@@ -50,6 +47,9 @@ export default function App() {
   const [hintsUsed, setHintsUsed] = useState(initial?.hintsUsed || 0);
   const [seed, setSeed] = useState(initial?.seed || null);  // null = free play; 'd:YYYY-MM-DD' = daily
   const [tier, setTier] = useState(initial?.tier || 'story');
+  const [module, setModule] = useState(initial?.module || 'm1');
+  const moduleCfg = moduleOrDefault(module);
+  const nodes = moduleCfg.nodes;
   const [timerLeft, setTimerLeft] = useState(null); // ms remaining in tier timer; null = no timer
   const [expiredOpen, setExpiredOpen] = useState(false);
   const [screen, setScreen] = useState(() => {
@@ -87,10 +87,12 @@ export default function App() {
   // a HARDENED/GHOST tier gets a real 60s budget instead of inheriting
   // an ancient startedAt from a previous session.
   function startFreshRun(opts = {}) {
+    const mod = opts.module || 'm1';
+    setModule(mod);
     setTier(opts.tier || 'story');
     setSeed(opts.daily ? dailySeed(todayUTC()) : null);
     setUnlocked([]);
-    setActiveNode('gate');
+    setActiveNode(moduleOrDefault(mod).nodes[0]?.id || 'gate');
     setHintsUsed(0);
     startRef.current = Date.now();
     setElapsed(null);
@@ -127,9 +129,9 @@ export default function App() {
   // persist
   useEffect(() => {
     localStorage.setItem(LS_KEY, JSON.stringify({
-      unlocked, activeNode, startedAt: startRef.current, hintsUsed, seed, tier
+      unlocked, activeNode, startedAt: startRef.current, hintsUsed, seed, tier, module
     }));
-  }, [unlocked, activeNode, hintsUsed, seed, tier]);
+  }, [unlocked, activeNode, hintsUsed, seed, tier, module]);
 
   // tier timer — only ticks while playing (screen=shell|world) and run not won
   useEffect(() => {
@@ -187,7 +189,7 @@ export default function App() {
   function onReset() {
     localStorage.removeItem(LS_KEY);
     setUnlocked([]);
-    setActiveNode('gate');
+    setActiveNode(moduleOrDefault(module).nodes[0]?.id || 'gate');
     setWinOpen(false);
     startRef.current = Date.now();
     setElapsed(null);
@@ -228,12 +230,14 @@ export default function App() {
           hintsUsed={hintsUsed}
           seed={seed}
           tier={tier}
+          module={module}
           onClose={() => setWinOpen(false)}
           onReset={onReset}
         />
         <WorldShell
           seed={seed}
           tier={tier}
+          module={module}
           timerLeft={timerLeft}
           status={status}
           setStatus={setStatus}
@@ -241,7 +245,7 @@ export default function App() {
           setUnlocked={setUnlocked}
           activeNode={activeNode}
           setActiveNode={setActiveNode}
-          nodes={NODES}
+          nodes={nodes}
           onWin={onWin}
           onReset={onReset}
           onHintUsed={() => setHintsUsed(n => n + 1)}
@@ -284,7 +288,13 @@ export default function App() {
             </button>
             <span className="text-terminal-glow text-lg tracking-widest">▣ GHOSTWIRE</span>
             <span className="text-xs text-terminal-green/60 italic hidden md:inline">wake up. break out. disappear.</span>
-            <span className="text-xs text-terminal-green/40">v0.4.0</span>
+            <span className="text-xs text-terminal-green/40">v0.5.0</span>
+            <span
+              className="text-[10px] tracking-widest px-2 py-0.5 border border-cyan-400/60 text-cyan-300 bg-cyan-500/10"
+              title={moduleCfg.blurb}
+            >
+              {moduleCfg.label}
+            </span>
             {seed && isDailySeed(seed) && (
               <span
                 className="text-[10px] tracking-widest px-2 py-0.5 border border-amber-400 text-amber-300 bg-amber-500/10"
@@ -319,7 +329,7 @@ export default function App() {
             )}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <StatusBar status={status} unlocked={unlocked} totalNodes={NODES.length - 1} />
+            <StatusBar status={status} unlocked={unlocked} totalNodes={nodes.length - 1} />
             <button
               onClick={() => setWelcomeOpen(true)}
               className="text-xs px-2 py-0.5 border border-terminal-glow/50 text-terminal-glow/80 hover:bg-terminal-glow/10"
@@ -352,15 +362,16 @@ export default function App() {
             setUnlocked={setUnlocked}
             activeNode={activeNode}
             setActiveNode={setActiveNode}
-            nodes={NODES}
+            nodes={nodes}
             onWin={onWin}
             onReset={onReset}
             onHintUsed={() => setHintsUsed(n => n + 1)}
             seed={seed}
             tier={tier}
+            module={module}
           />
           <NetworkGraph
-            nodes={NODES}
+            nodes={nodes}
             unlocked={unlocked}
             activeNode={activeNode}
             status={status}

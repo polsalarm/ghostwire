@@ -15,7 +15,7 @@ const CLOSE_DELAY_MS = 2500;
 
 export default function WorldShell({
   status, setStatus, unlocked, setUnlocked, activeNode, setActiveNode, nodes,
-  onWin, onReset, onHintUsed, onExitWorld, seed, tier, timerLeft
+  onWin, onReset, onHintUsed, onExitWorld, seed, tier, timerLeft, module = 'm1'
 }) {
   const setUnlockedStore = useWorld(s => s.setUnlocked);
   const closeTerminal = useWorld(s => s.closeTerminal);
@@ -100,6 +100,7 @@ export default function WorldShell({
         banner={overlayBanner}
         seed={seed}
         tier={tier}
+        module={module}
         status={status}
         setStatus={setStatus}
         unlocked={unlocked}

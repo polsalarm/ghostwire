@@ -23,7 +23,7 @@ const LINE_PAUSE_MS = 30;    // between lines
 
 export default function Terminal({
   status, setStatus, unlocked, setUnlocked, activeNode, setActiveNode, nodes,
-  onWin, onReset, onHintUsed, mode = 'terminal', seed = null, tier = 'story'
+  onWin, onReset, onHintUsed, mode = 'terminal', seed = null, tier = 'story', module = 'm1'
 }) {
   const [history, setHistory] = useState(BANNER.map(t => ({ text: t, kind: 'sys' })));
   const [queue, setQueue] = useState([]);
@@ -153,7 +153,7 @@ export default function Terminal({
     }
 
     setStatus('processing');
-    const result = await runCommand(cmd, { unlocked, nodes, mode, seed, tier });
+    const result = await runCommand(cmd, { unlocked, nodes, mode, seed, tier, module });
 
     commitLines(result.lines, result.ok ? 'ok' : 'err');
 
