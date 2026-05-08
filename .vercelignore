@@ -1,0 +1,14 @@
+server
+node_modules
+dist
+.vite
+.code-review-graph
+*.log
+plan.md
+plan-3d.md
+linkedin-caption.md
+ppt-prompt.md
+README.md
+qr_*.svg
+image.png
+.claude
